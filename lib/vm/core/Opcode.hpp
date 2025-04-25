@@ -1,0 +1,15 @@
+#pragma once
+
+enum Opcode {
+    OP_PUSH = 0,
+    OP_POP, OP_DUP, OP_SWAP, OP_DEL,
+    OP_DECL, OP_SET, OP_GET,
+    OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_MOD,
+    OP_EQ, OP_LT, OP_GT, OP_AND, OP_OR, OP_NOT,
+    OP_JMP, OP_JZ, OP_JNZ,
+    OP_LABEL, OP_CALL, OP_RET, OP_END,
+    OP_WRITE, OP_FLUSH, OP_DUMP,
+    OP_IN, OP_FREAD, OP_FWRITE, OP_EXIT,
+    OP_RAND, OP_TIME, OP_SLEEP,
+    NOP
+};
