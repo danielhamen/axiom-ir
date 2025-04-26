@@ -1,4 +1,3 @@
-#pragma once
 #include "CallStack.hpp"
 
 void CallStack::push(const size_t v) {

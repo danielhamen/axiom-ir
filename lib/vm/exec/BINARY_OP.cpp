@@ -1,4 +1,3 @@
-#pragma once
 #include "BINARY_OP.hpp"
 #include <stdexcept>
 
@@ -21,4 +20,6 @@ BINARY_OP(MOD,   __mod__)
 BINARY_OP(EQ,    __eq__)
 BINARY_OP(GT,    __gt__)
 BINARY_OP(LT,    __lt__)
+BINARY_OP(OR,    __or__)
+BINARY_OP(AND,    __and__)
 #undef BINARY_OP

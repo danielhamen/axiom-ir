@@ -5,6 +5,8 @@ class Object : public std::enable_shared_from_this<Object> {
 public:
     virtual std::string __str__()   const = 0;
     virtual bool        __bool__()  const { return true; }
+    virtual int64_t     __int__()  const { return 0; }
+    virtual double      __double__()  const { return 0; }
 
     // arithmetic & comparison
     virtual std::shared_ptr<Object> __add__ (const Object& o) const;
@@ -17,6 +19,9 @@ public:
     virtual std::shared_ptr<Object> __gt__  (const Object& o) const;
     virtual std::shared_ptr<Object> __le__  (const Object& o) const;
     virtual std::shared_ptr<Object> __ge__  (const Object& o) const;
+    virtual std::shared_ptr<Object> __and__(const Object& o) const;
+    virtual std::shared_ptr<Object> __or__ (const Object& o) const;
+    virtual std::shared_ptr<Object> __not__() const;
 
     // iteration protocol
     virtual std::shared_ptr<Object> __iter__() const;

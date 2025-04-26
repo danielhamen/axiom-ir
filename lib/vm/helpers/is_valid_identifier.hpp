@@ -1,3 +1,4 @@
+#pragma once
 #include <string>
 
-static bool is_valid_identifier(const std::string&);
+bool is_valid_identifier(const std::string&);

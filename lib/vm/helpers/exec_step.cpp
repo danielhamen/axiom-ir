@@ -1,4 +1,4 @@
-#pragma once
+#include <iomanip>
 #include <iostream>
 #include "../helpers/exec_step.hpp"
 #include "../core/Process.hpp"
@@ -6,9 +6,10 @@
 #include "../exec/exec.hpp"
 
 void exec_step(Process& p) {
-    const Bytecode& instr = p.module.at(p.pc);
+    Bytecode& instr = p.module.at(p.pc);
     bool ok = false;
     size_t before = p.pc;
+    // std::cout << "Executing process id: '" << std::setw(5) << std::setfill('0') << p.pc << "'; bytecode: '" + instr.toString() + "'" << std::endl;
     switch (instr.opcode) {
         case OP_PUSH:  ok = exec::PUSH  (p);    break;
         case OP_POP:   ok = exec::POP   (p);    break;
@@ -29,6 +30,9 @@ void exec_step(Process& p) {
         case OP_EQ:    ok = exec::EQ    (p);    break;
         case OP_GT:    ok = exec::GT    (p);    break;
         case OP_LT:    ok = exec::LT    (p);    break;
+        case OP_AND:   ok = exec::AND   (p);    break;
+        case OP_OR:    ok = exec::OR    (p);    break;
+        case OP_NOT:   ok = exec::NOT   (p);    break;
         case OP_JMP:   ok = exec::JMP   (p);    break;
         case OP_JNZ:   ok = exec::JNZ   (p);    break;
         case OP_JZ:    ok = exec::JZ    (p);    break;
@@ -38,24 +42,23 @@ void exec_step(Process& p) {
         case OP_RAND:  ok = exec::RAND  (p);    break;
         case OP_TIME:  ok = exec::TIME  (p);    break;
         case NOP:                               break;
-        case OP_LABEL:                          break;
+        case OP_LABEL: ok = true;               break;
+        case OP_TYPE:  ok = exec::TYPE  (p);    break;
+        case OP_CAST:  ok = exec::CAST  (p);    break;
         case OP_IN:
-        case OP_AND:
-        case OP_OR:
-        case OP_NOT:
         case OP_SLEEP:
         case OP_FREAD:
         case OP_FWRITE:
-        case OP_END:                           break;
+        case OP_END:                            break;
         default:
             throw std::runtime_error("Opcode not implemented");
     }
     if (!ok) {
         p.broken = true;
-        std::cerr << "Exited with an error" << std::endl;
+        p.err("Exited with an error", 3);
     }
 
-    if (p.pc == before) {
-        ++p.pc;
+    if (p.pc == before && !p.completed && !p.broken) {
+        p.pc++;
     }
 }

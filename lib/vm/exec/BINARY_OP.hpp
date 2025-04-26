@@ -10,4 +10,6 @@ namespace exec {
     bool EQ(Process& p);
     bool GT(Process& p);
     bool LT(Process& p);
+    bool OR(Process& p);
+    bool AND(Process& p);
 }

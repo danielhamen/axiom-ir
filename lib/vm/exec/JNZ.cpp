@@ -1,4 +1,3 @@
-#pragma once
 #include <string>
 #include "JNZ.hpp"
 #include "exec.hpp"

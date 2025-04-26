@@ -1,4 +1,3 @@
-#pragma once
 #include "WRITE.hpp"
 #include "exec.hpp"
 bool exec::WRITE(Process& p) {

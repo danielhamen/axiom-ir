@@ -1,4 +1,3 @@
-#pragma once
 #include <iostream>
 #include "Process.hpp"
 #include "Bytecode.hpp"
@@ -13,7 +12,7 @@ void Process::execute() {
             pc = c;
             bool ok = exec::LABEL(*this);
             if (!ok) {
-                std::cerr << "Error registering label" << std::endl;
+                err("Error registering label", 2);
                 return;
             }
             pc = 0;
@@ -21,7 +20,7 @@ void Process::execute() {
     }
 
     if (!labels.exists("main")) {
-        std::cerr << "Expected .main label. None found.";
+        err("Expected .main label. None found.", 1);
         return;
     }
 
@@ -29,4 +28,9 @@ void Process::execute() {
     while (!completed && !broken) {
         exec_step(*this);
     }
+}
+
+void Process::err(const std::string& message, const int& code) {
+    std::cerr << "An error occured during the bytecode execution." << std::endl << "\tDuring process count: " << pc << std::endl << message << std::endl;
+    exit(code);
 }

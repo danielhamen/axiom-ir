@@ -1,7 +1,6 @@
-#pragma once
 #include "Memory.hpp"
 #include "string"
-#include "Undefined.hpp"
+#include "../obj/Undefined.hpp"
 
 void Memory::declare(const std::string& n) {
     if (mem.find(n) != mem.end())
@@ -22,4 +21,8 @@ const std::shared_ptr<Object>& Memory::get(const std::string& n) const {
     if (it == mem.end())
         throw std::runtime_error("Undefined var: " + n);
     return it->second;
+}
+bool Memory::has(const std::string& n) const {
+    auto it = mem.find(n);
+    return it != mem.end();
 }

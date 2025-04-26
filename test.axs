@@ -1,9 +1,10 @@
-struct Error {
-    init() {}
+func print() {
+    Meta.Emit("(TIME)");
+    Meta.Write();
+    Meta.Emit("(PUSH, \"\\n\")");
+    Meta.Write();
+    Meta.Dump();
+    Meta.Flush();
 }
-struct ValueError : Error {}
 
-define assert(cond?: Any) {}
-let x: Int = 5;
-
-typealias Inf : Infinity;
+print();

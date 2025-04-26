@@ -11,6 +11,9 @@ std::shared_ptr<Object> Object::__lt__  (const Object& o) const { throw std::run
 std::shared_ptr<Object> Object::__gt__  (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for >"); }
 std::shared_ptr<Object> Object::__le__  (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for <="); }
 std::shared_ptr<Object> Object::__ge__  (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for >="); }
+std::shared_ptr<Object> Object::__or__  (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for ||"); }
+std::shared_ptr<Object> Object::__and__  (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for &&"); }
+std::shared_ptr<Object> Object::__not__  () const { throw std::runtime_error("Unsupported operand type(s) for !"); }
 
 std::shared_ptr<Object> Object::__iter__() const { throw std::runtime_error("Object is not iterable"); }
 std::shared_ptr<Object> Object::__next__()       { throw std::runtime_error("Iteration not supported"); }

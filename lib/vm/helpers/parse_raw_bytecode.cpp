@@ -1,9 +1,12 @@
-#pragma once
+#include <iostream>
+#include "parse_raw_bytecode.hpp"
 #include <vector>
 #include <string>
 #include <sstream>
-#include "Bytecode.hpp"
-#include "parse_raw_bytecode.hpp"
+#include "../core/Bytecode.hpp"
+#include "../core/opmap.hpp"
+#include "trim.hpp"
+#include "split.hpp"
 
 std::vector<Bytecode> parse_raw_bytecode(const std::string &input) {
     std::vector<Bytecode> code;

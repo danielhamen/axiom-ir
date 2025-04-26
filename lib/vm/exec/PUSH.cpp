@@ -1,4 +1,3 @@
-#pragma once
 #include "PUSH.hpp"
 #include "../helpers/parse_literal.hpp"
 #include "exec.hpp"

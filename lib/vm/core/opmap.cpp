@@ -1,4 +1,3 @@
-#pragma once
 #include "opmap.hpp"
 
 const std::unordered_map<std::string, Opcode> opmap = {
@@ -10,5 +9,6 @@ const std::unordered_map<std::string, Opcode> opmap = {
     {"JZ", OP_JZ}, {"JNZ", OP_JNZ}, {"CALL", OP_CALL}, {"RET", OP_RET},
     {"END", OP_END}, {"WRITE", OP_WRITE}, {"FLUSH", OP_FLUSH}, {"DUMP", OP_DUMP},
     {"IN", OP_IN}, {"FREAD", OP_FREAD}, {"FWRITE", OP_FWRITE}, {"EXIT", OP_EXIT},
-    {"RAND", OP_RAND}, {"TIME", OP_TIME}, {"SLEEP", OP_SLEEP}, {"NOP", NOP}
+    {"RAND", OP_RAND}, {"TIME", OP_TIME}, {"SLEEP", OP_SLEEP}, {"NOP", NOP},
+    {"TYPE", OP_TYPE}, {"CAST", OP_CAST}, {"LABEL", OP_LABEL}
 };

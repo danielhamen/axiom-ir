@@ -1,37 +1,71 @@
-#pragma once
 #include "parse_literal.hpp"
+#include <cctype> // for std::isdigit
+#include <stdexcept>
+
 std::shared_ptr<Object> parse_literal(const std::string& tok) {
-     // if (tok == "true")  return std::make_shared<Bool>(true);
-     // if (tok == "false") return std::make_shared<Bool>(false);
-     // if (tok == "null") return std::make_shared<Null>();
-     // if (tok == "undefined") return std::make_shared<Undefined>();
-     // if (tok == "nan" || tok == "NaN") return std::make_shared<NaN>();
-     // if (tok == "inf" || tok == "infinity") return std::make_shared<Infinity>();
+    // --- Booleans ---
+    if (tok == "true")  return std::make_shared<Boolean>(true);
+    if (tok == "false") return std::make_shared<Boolean>(false);
 
-     if ((tok.front() == '"' && tok.back() == '"') ||
-         (tok.front() == '\'' && tok.back() == '\''))
-     {
-         // return std::make_shared<String>(tok.substr(1, tok.size() - 2));
-     }
+    // --- Regular Expression Literals ---
+    if (tok.size() >= 4 && tok[0] == 'r' && tok[1] == '/' && tok.find('/', 2) != std::string::npos) {
+        auto lastSlash = tok.rfind('/');
+        std::string pattern = tok.substr(2, lastSlash - 2);
+        std::string flagsStr = tok.substr(lastSlash + 1);
+        std::set<char> flags(flagsStr.begin(), flagsStr.end());
+        return std::make_shared<RegEx>(pattern, flags);
+    }
 
-     bool negative = false;
-     size_t start = 0;
-     if (!tok.empty() && (tok[0] == '+' || tok[0] == '-')) {
-         negative = (tok[0] == '-');
-         start = 1;
-     }
+    // --- String Literals ---
+    if (tok.size() >= 2 &&
+        ((tok.front() == '"' && tok.back() == '"') ||
+         (tok.front() == '\'' && tok.back() == '\''))) {
+        std::string _tok = tok;
+        str_decode(_tok);
+        return std::make_shared<String>(_tok);
+    }
 
-     // Check for decimal
-     if (tok.find('.', start) != std::string::npos) {
-         double val = std::stod(tok);
-         // return std::make_shared<Decimal>(val);
-     }
+    // --- Numeric Literals ---
+    {
+        size_t start = 0;
+        if (tok[0] == '+' || tok[0] == '-') start = 1;
 
-     // Integer literal
-     std::string digits = tok.substr(start);
-     if (!std::all_of(digits.begin(), digits.end(), ::isdigit))
-         throw std::runtime_error("Invalid numeric literal: " + tok);
+        bool hasDot = false;
+        bool hasExp = false;
+        for (size_t i = start; i < tok.size(); ++i) {
+            if (tok[i] == '.') {
+                if (hasDot) {
+                    throw std::runtime_error("Invalid number: multiple dots in " + tok);
+                }
+                hasDot = true;
+            }
+            else if (tok[i] == 'e' || tok[i] == 'E') {
+                if (hasExp) {
+                    throw std::runtime_error("Invalid number: multiple exponents in " + tok);
+                }
+                hasExp = true;
+            }
+            else if (!std::isdigit(static_cast<unsigned char>(tok[i]))) {
+                throw std::runtime_error("Invalid character '" + std::string(1, tok[i]) + "' in numeric literal: " + tok);
+            }
+        }
 
-     uint64_t val = std::stoull(digits);
-     // return std::make_shared<Integer>(val, !negative);
- }
+        try {
+            if (hasExp) {
+                double v = std::stod(tok);
+                return std::make_shared<Scientific>(v);
+            }
+            if (hasDot) {
+                double v = std::stod(tok);
+                return std::make_shared<Decimal>(v);
+            }
+            int64_t v = std::stoll(tok);
+            return std::make_shared<Integer>(v);
+        }
+        catch (const std::exception& e) {
+            throw std::runtime_error("Failed to parse numeric literal: " + tok);
+        }
+    }
+
+    throw std::runtime_error("Invalid literal: " + tok);
+}

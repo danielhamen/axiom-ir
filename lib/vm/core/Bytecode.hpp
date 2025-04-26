@@ -7,4 +7,5 @@ struct Bytecode {
     Opcode opcode;
     std::vector<std::string> operand;
     Bytecode(Opcode op, std::vector<std::string> o = {}) : opcode(op), operand(std::move(o)) {}
+    std::string toString();
 };

@@ -1,5 +1,4 @@
-#pragma once
-#include "../helpers/get_nanotime.cpp"
+#include "../helpers/get_nanotime.hpp"
 #include "../obj/Integer.hpp"
 #include "exec.hpp"
 bool exec::TIME(Process& p) {

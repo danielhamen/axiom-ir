@@ -8,6 +8,8 @@ namespace exec {
     bool POP(Process&);
     bool DUP(Process&);
     bool DECL(Process&);
+    bool TYPE(Process&);
+    bool CAST(Process&);
     bool SWAP(Process&);
     bool SET(Process&);
     bool GET(Process&);
@@ -23,6 +25,9 @@ namespace exec {
     bool EQ(Process&);
     bool GT(Process&);
     bool LT(Process&);
+    bool OR(Process&);
+    bool AND(Process&);
+    bool NOT(Process&);
     bool JMP(Process&);
     bool JNZ(Process&);
     bool JZ(Process&);

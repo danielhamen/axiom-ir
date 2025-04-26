@@ -77,7 +77,6 @@ std::string               trim(const std::string&);
 std::vector<std::string>  split(const std::string&, char);
 bool                       is_valid_identifier(const std::string&);
 std::shared_ptr<Object>    parse_literal(const std::string&);
-int64_t                    get_nanotime();
 
 
 struct SectionTable {

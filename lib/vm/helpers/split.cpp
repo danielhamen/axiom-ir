@@ -1,11 +1,10 @@
-#pragma once
 #include <string>
 #include <vector>
 #include <sstream>
 #include "split.hpp"
 #include "trim.hpp"
 
-static std::vector<std::string> split(const std::string &s, char d)  {
+std::vector<std::string> split(const std::string &s, char d)  {
     std::vector<std::string> out;
     std::istringstream ss(s);
     std::string item;

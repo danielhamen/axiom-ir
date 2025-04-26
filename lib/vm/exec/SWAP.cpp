@@ -1,4 +1,3 @@
-#pragma once
 #include "SWAP.hpp"
 #include "exec.hpp"
 bool exec::SWAP(Process& p) {

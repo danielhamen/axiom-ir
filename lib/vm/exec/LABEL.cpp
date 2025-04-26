@@ -1,8 +1,7 @@
-#pragma once
 #include <string>
 #include "LABEL.hpp"
 #include "exec.hpp"
-#include "../helpers/is_valid_identifier.cpp"
+#include "../helpers/is_valid_identifier.hpp"
 bool exec::LABEL(Process& p)  {
     const auto& b = p.module[p.pc];
     std::string name = b.operand.at(0);

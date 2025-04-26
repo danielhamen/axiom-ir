@@ -1,4 +1,3 @@
-#pragma once
 #include "OperandStack.hpp"
 
 void OperandStack::push(const std::shared_ptr<Object>& v) {

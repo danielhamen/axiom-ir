@@ -1,4 +1,3 @@
-#pragma once
 #include "unordered_map_to_string.hpp"
 
 template <typename K, typename V>
