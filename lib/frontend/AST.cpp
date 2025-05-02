@@ -23,6 +23,12 @@ Variable::Variable(const std::string& n) : name(n) {
     type = ASTNodeType::VARIABLE;
 }
 
+// --- Namespace Reference Node ---
+Namespace::Namespace(const std::shared_ptr<ASTNode> n, std::vector<std::shared_ptr<ASTNode>> body)
+    : name(n), body(std::move(body)) {
+    type = ASTNodeType::NAMESPACE_DECL;
+}
+
 // --- BinaryOp Constructor ---
 BinaryOp::BinaryOp(const std::string& oper, std::shared_ptr<ASTNode> lhs, std::shared_ptr<ASTNode> rhs)
     : op(oper), left(std::move(lhs)), right(std::move(rhs)) {
@@ -46,9 +52,10 @@ Declaration::Declaration(std::shared_ptr<ASTNode> pat,
 }
 
 // --- Field Access Constructor ---
-FieldAccess::FieldAccess(std::shared_ptr<ASTNode> object, const std::string& field)
-    : object(object),
-      field(field) {};
+FieldAccess::FieldAccess(std::shared_ptr<ASTNode> object, std::shared_ptr<ASTNode> field)
+    : object(std::move(object)), field(std::move(field)) {
+    type = ASTNodeType::FIELD_ACCESS;
+}
 
 // --- VariablePattern Constructor ---
 VariablePattern::VariablePattern(const std::string& n)
@@ -256,14 +263,47 @@ std::string ast_to_string(const std::shared_ptr<ASTNode>& node) {
 
             std::string c = "";
             for (auto stmt : expr->body) {
-                c += ast_to_string(stmt);
+                c += ast_to_string(stmt) + "; ";
             }
 
             std::string ret = ast_to_string(expr->returnType.value_or(std::make_shared<ASTNode>(Variable("Any"))));
 
             return "FuncStmt(" + ast_to_string(expr->name) + ", (" + p + "), " + ret + ", {" + c + "})";
         }
+        case ASTNodeType::CALL_EXPR: {
+            auto expr = static_cast<CallExpr*>(node.get());
+            std::string args = "";
+            for (auto arg : expr->arguments) {
+                args += ast_to_string(arg) + ", ";
+            }
+            return "CallExpr(" + ast_to_string(expr->callee) + ", (" + args + "))";
+        }
+        case ASTNodeType::META_STMT: {
+            auto expr = static_cast<MetaStmt*>(node.get());
+            std::string args = "";
+            if (expr->arg.has_value()) {
+                for (auto arg : expr->arg.value()) {
+                    args += ast_to_string(arg) + ", ";
+                }
+            }
+
+            return "MetaStmt(" + ast_to_string(expr->ns) + ", " + ast_to_string(expr->call) + ", (" + args + "))";
+        }
+        case ASTNodeType::NAMESPACE_DECL: {
+            auto ns = static_cast<Namespace*>(node.get());
+            std::string body = "";
+            for (auto stmt : ns->body) {
+                body += ast_to_string(stmt) + "; ";
+            }
+
+            return "NamespaceStmt(" + ast_to_string(ns->name) + ", (" + body + "))";
+        }
+        case ASTNodeType::FIELD_ACCESS: {
+            auto expr = static_cast<FieldAccess*>(node.get());
+
+            return "FieldAccess(" + ast_to_string(expr->object) + ", " + ast_to_string(expr->field) + ")";
+        }
         default:
-            return "<unhandled node type>";
+            return "<unhandled node type '" + std::to_string(static_cast<int>(node->type)) + "'>";
     }
 }

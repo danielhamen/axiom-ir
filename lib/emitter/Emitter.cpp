@@ -13,13 +13,14 @@ Emitter::Emitter(std::vector<std::shared_ptr<ASTNode>>& program)
 std::vector<Bytecode> Emitter::emit() {
     std::vector<Bytecode> main; // .main entry code
     std::vector<Bytecode> structural; // passive code like definitions of functions, classes, etc
-    main.push_back({OP_LABEL, {".main"}});
+    main.push_back({OP_LABEL, {"main"}});
 
     for (const auto& node : program) {
         auto code = emit_node(node);
         for (auto b : code) {
             // std::cout << b.toString() << std::endl;
-            if (node->type == ASTNodeType::FUNCTION_STMT) {
+            if (node->type == ASTNodeType::FUNCTION_STMT ||
+                node->type == ASTNodeType::NAMESPACE_DECL) {
                 structural.push_back(b);
             } else {
                 main.push_back(b);
@@ -54,7 +55,13 @@ std::vector<Bytecode> Emitter::emit_node(const std::shared_ptr<ASTNode>& node) {
         case ASTNodeType::RETURN_STMT:
             return emit_return(std::static_pointer_cast<ReturnStmt>(node));
         case ASTNodeType::CALL_EXPR:
-            return emit_call_expr(std::static_pointer_cast<>());
+            return emit_call_expr(std::static_pointer_cast<CallExpr>(node));
+        case ASTNodeType::EXPRESSION_STMT:
+            return emit_expression_stmt(std::static_pointer_cast<ExpressionStmt>(node));
+        case ASTNodeType::NAMESPACE_DECL:
+            return emit_namespace(std::static_pointer_cast<Namespace>(node));
+        case ASTNodeType::FIELD_ACCESS:
+            return emit_field_access(std::static_pointer_cast<FieldAccess>(node));
         default:
             std::cout << ast_to_string(node) << std::endl;
             throw std::runtime_error("<unknown AST node type>");
@@ -77,16 +84,16 @@ std::string random_identifier(size_t length = 12) {
 std::vector<Bytecode> Emitter::emit_function_stmt(const std::shared_ptr<FunctionStmt>& funcStmt) {
     std::vector<Bytecode> code;
 
-    std::string ref_name = "." + random_identifier();
+    // std::string ref_name = random_identifier();
 
     auto func_name = std::dynamic_pointer_cast<Variable>(funcStmt->name);
 
     // --- Function entry label ---
-    code.push_back({ OP_LABEL, { "." + func_name->name } });
-    code.push_back({ OP_JMP, { ref_name } });
+    code.push_back({ OP_LABEL, { func_name->name } });
+    // code.push_back({ OP_JMP, { ref_name } });
 
-    // --- Function body label ---
-    code.push_back({ OP_LABEL, { ref_name } });
+    // // --- Function body label ---
+    // code.push_back({ OP_LABEL, { ref_name } });
 
     // Emit function body
     for (auto stmt : funcStmt->body) {
@@ -110,6 +117,99 @@ std::vector<Bytecode> Emitter::emit_return(const std::shared_ptr<ReturnStmt>& re
         code.insert(code.end(), value_code.begin(), value_code.end());
     }
 
+    return code;
+}
+
+std::vector<Bytecode> Emitter::emit_expression_stmt(const std::shared_ptr<ExpressionStmt>& exprStmt) {
+    return emit_node(exprStmt->expression);
+}
+
+std::string resolve_field_access(const std::shared_ptr<ASTNode>& node) {
+    if (!node) throw std::runtime_error("Cannot resolve null callee");
+
+    switch (node->type) {
+        case ASTNodeType::VARIABLE: {
+            auto var = std::static_pointer_cast<Variable>(node);
+            return var->name;
+        }
+
+        case ASTNodeType::FIELD_ACCESS: {
+            auto field = std::static_pointer_cast<FieldAccess>(node);
+            std::string base = resolve_field_access(field->object);
+            auto prop = std::dynamic_pointer_cast<Variable>(field->field);
+            if (!prop) {
+                throw std::runtime_error("FieldAccess right-hand side must be Variable.");
+            }
+            return base + "." + prop->name;
+        }
+
+        default:
+            throw std::runtime_error("Unsupported callee type in resolve_field_access");
+    }
+}
+
+std::vector<Bytecode> Emitter::emit_call_expr(const std::shared_ptr<CallExpr>& callExpr) {
+    std::vector<Bytecode> code;
+
+    auto callee = resolve_field_access(callExpr->callee);
+
+    code.push_back({ OP_CALL, { callee } });
+    return code;
+}
+
+
+std::vector<Bytecode> Emitter::emit_field_access(const std::shared_ptr<FieldAccess>& fieldAccess) {
+    std::vector<Bytecode> code;
+
+    std::string full_name;
+    std::shared_ptr<ASTNode> current = fieldAccess;
+
+    // Collect field names in reverse order
+    std::vector<std::string> components;
+
+    // Walk the FieldAccess chain
+    while (auto field = std::dynamic_pointer_cast<FieldAccess>(current)) {
+        auto field_var = std::dynamic_pointer_cast<Variable>(field->field);
+        if (!field_var) {
+            throw std::runtime_error("FieldAccess::field must be Variable");
+        }
+        components.push_back(field_var->name);
+        current = field->object;
+    }
+
+    // Add base object
+    if (auto base = std::dynamic_pointer_cast<Variable>(current)) {
+        components.push_back(base->name);
+    } else {
+        throw std::runtime_error("FieldAccess::base must be Variable");
+    }
+
+    // Reverse and join
+    std::reverse(components.begin(), components.end());
+    std::string full_access = "$" + components[0];
+    for (size_t i = 1; i < components.size(); ++i) {
+        full_access += "." + components[i];
+    }
+
+    code.push_back(Bytecode{OP_GET, {full_access}});
+    return code;
+}
+
+std::vector<Bytecode> Emitter::emit_namespace(const std::shared_ptr<Namespace>& ns) {
+    std::vector<Bytecode> code;
+
+    auto ns_name = std::dynamic_pointer_cast<Variable>(ns->name)->name;
+
+    for (const auto& stmt : ns->body) {
+        auto inner_code = emit_node(stmt);
+        for (auto& bc : inner_code) {
+            if (bc.opcode == OP_LABEL && !bc.operand.empty()) {
+                // Prefix label with namespace
+                bc.operand[0] = ns_name + "." + bc.operand[0];
+            }
+        }
+        code.insert(code.end(), inner_code.begin(), inner_code.end());
+    }
     return code;
 }
 
@@ -168,12 +268,50 @@ std::vector<Bytecode> Emitter::emit_meta_stmt(const std::shared_ptr<MetaStmt>& m
             std::vector<Bytecode> code = parse_raw_bytecode("(RAND)");
             return code;
         }
+        if (callee == "Pop") {
+            // ensure variable passed as single parameter
+            if (!args.has_value() || args->size() != 1) {
+                throw std::runtime_error("Meta.Pop(...) expects exactly one argument. Given: " + (args ? std::to_string(args->size()) : "none"));
+            }
+
+            auto abstract_var = args.value().front();
+            if (abstract_var->type != ASTNodeType::VARIABLE) {
+                throw std::runtime_error("Meta.Pop(...) expects a variable argument. Given: " + (args ? std::to_string(static_cast<int>(abstract_var->type)) : "none"));
+            }
+
+            auto var = std::dynamic_pointer_cast<Variable>(abstract_var);
+            std::vector<Bytecode> code = parse_raw_bytecode("(SET, $" + var->name + ")");
+            return code;
+        }
+        if (callee == "Push") {
+            // ensure variable passed as single parameter
+            if (!args.has_value() || args->size() != 1) {
+                throw std::runtime_error("Meta.Push(...) expects exactly one argument. Given: " + (args ? std::to_string(args->size()) : "none"));
+            }
+
+            auto abstract_var = args.value().front();
+            if (abstract_var->type != ASTNodeType::VARIABLE) {
+                throw std::runtime_error("Meta.Push(...) expects a variable argument. Given: " + (args ? std::to_string(static_cast<int>(abstract_var->type)) : "none"));
+            }
+
+            auto var = std::dynamic_pointer_cast<Variable>(abstract_var);
+            std::vector<Bytecode> code = parse_raw_bytecode("(GET, $" + var->name + ")");
+            return code;
+        }
         if (callee == "Write") {
             if (!args.has_value() || args->size() != 0) {
                 throw std::runtime_error("Meta.Write() expects exactly zero arguments. Given: " + (args ? std::to_string(args->size()) : "none"));
             }
 
             std::vector<Bytecode> code = parse_raw_bytecode("(WRITE)");
+            return code;
+        }
+        if (callee == "WriteLine") {
+            if (!args.has_value() || args->size() != 0) {
+                throw std::runtime_error("Meta.WriteLine() expects exactly zero arguments. Given: " + (args ? std::to_string(args->size()) : "none"));
+            }
+
+            std::vector<Bytecode> code = parse_raw_bytecode("(PUSH, \"\\n\")\n(WRITE)");
             return code;
         }
         if (callee == "Flush") {

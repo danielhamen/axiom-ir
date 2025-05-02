@@ -62,12 +62,12 @@ void Parser::synchronize() {
 }
 
 std::shared_ptr<BlockStmt> Parser::parse_block() {
-    consume(TOK_LBRACE, "Expected '{'");
+    consume(TOK_LBRACE, "Expected '{' in parse_block");
     std::vector<std::shared_ptr<ASTNode>> stmts;
     while (!check(TOK_RBRACE) && !at_end()) {
         stmts.push_back(parse_statement());
     }
-    consume(TOK_RBRACE, "Expected '}'");
+    consume(TOK_RBRACE, "Expected '}' in parse_block");
     return std::make_shared<BlockStmt>(std::move(stmts));
 }
 
@@ -105,18 +105,30 @@ std::shared_ptr<ASTNode> Parser::parse_statement() {
         if (kw == Keyword::KW_RETURN) return parse_return();
         if (kw == Keyword::KW_META) return parse_meta();
         if (kw == Keyword::KW_FUNC) return parse_function();
+        if (kw == Keyword::KW_NAMESPACE) return parse_namespace();
     }
 
+    // assignment
     if (check(TOK_IDENTIFIER) && tokens[current + 1].type == TOK_ASSIGN) {
         Token name = advance();
         advance();
         auto value = parse_expression();
-        consume(TOK_SEMICOLON, "Expected ';'");
+        consume(TOK_SEMICOLON, "Expected ';' in assignment");
         return std::make_shared<Assignment>(name.lexeme, value);
     }
 
+    // call
+    if (check(TOK_IDENTIFIER) && tokens[current + 1].type == TOK_LPAREN) {
+        Token callee_name = advance(); // consume identifier
+        auto iden = std::make_shared<Variable>(callee_name.lexeme);
+        auto call = parse_call(iden);
+        auto call_expr = std::dynamic_pointer_cast<CallExpr>(call);
+        consume(TOK_SEMICOLON, "Expected ';' in call");
+        return call_expr;
+    }
+
     auto expr = parse_expression();
-    consume(TOK_SEMICOLON, "Expected ';'");
+    consume(TOK_SEMICOLON, "Expected ';' in expression");
     return std::make_shared<ExpressionStmt>(expr);
 }
 
@@ -218,6 +230,22 @@ std::shared_ptr<ASTNode> Parser::parse_function() {
 
 }
 
+std::shared_ptr<ASTNode> Parser::parse_namespace() {
+    consume(TOK_KEYWORD, "Expected 'namespace' keyword.");
+
+    auto name = std::make_shared<Variable>(consume(TOK_IDENTIFIER, "Expected namespace name.").lexeme);
+
+    if (!check(TOK_LBRACE)) throw std::runtime_error("Expected '{' after namespace name.");
+
+    auto block = parse_block();
+
+    return std::make_shared<Namespace>(
+        std::move(name),
+        std::move(block->statements)
+    );
+
+}
+
 std::shared_ptr<ASTNode> Parser::parse_guard() {
     consume(TOK_KEYWORD, "Expected 'guard'");
     auto condition = parse_expression();
@@ -232,7 +260,7 @@ std::shared_ptr<ASTNode> Parser::parse_guard() {
     } else {
         auto ex = parse_expression();
         else_branch = std::make_shared<ReturnStmt>(ex);
-        consume(TOK_SEMICOLON, "Expected ';'");
+        consume(TOK_SEMICOLON, "Expected ';' in guard");
     }
 
     return std::make_shared<GuardStmt>(condition, else_branch);
@@ -279,7 +307,7 @@ std::shared_ptr<ASTNode> Parser::parse_meta() {
 
     if (check(TOK_LPAREN)) {
         auto call = parse_call(accessor); // returns shared_ptr<ASTNode>
-        consume(TOK_SEMICOLON, "Expected ';'");
+        consume(TOK_SEMICOLON, "Expected ';' in meta");
 
         // Downcast to CallExpr
         auto call_expr = std::dynamic_pointer_cast<CallExpr>(call);
@@ -293,7 +321,7 @@ std::shared_ptr<ASTNode> Parser::parse_meta() {
             call_expr->arguments
         );
     } else if (check(TOK_SEMICOLON)) {
-        consume(TOK_SEMICOLON, "Expected ';'");
+        consume(TOK_SEMICOLON, "Expected ';' in meta(2)");
 
         return std::make_shared<MetaStmt>(
             a_ns,
@@ -438,7 +466,7 @@ std::shared_ptr<ASTNode> Parser::parse_primary() {
 
         while (match({TOK_DOT})) {
             Token name = consume(TOK_IDENTIFIER, "Expected property name after '.'");
-            expr = std::make_shared<FieldAccess>(expr, name.lexeme);
+            expr = std::make_shared<FieldAccess>(expr, std::make_shared<Variable>(name.lexeme));
         }
 
         if (check(TOK_LPAREN)) {

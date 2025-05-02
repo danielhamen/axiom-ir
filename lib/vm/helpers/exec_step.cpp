@@ -2,6 +2,7 @@
 #include <iostream>
 #include "../helpers/exec_step.hpp"
 #include "../core/Process.hpp"
+#include "../core/opmap.hpp"
 #include "../core/Bytecode.hpp"
 #include "../exec/exec.hpp"
 
@@ -49,13 +50,13 @@ void exec_step(Process& p) {
         case OP_SLEEP:
         case OP_FREAD:
         case OP_FWRITE:
-        case OP_END:                            break;
+        case OP_END:   ok = true;               break;
         default:
             throw std::runtime_error("Opcode not implemented");
     }
     if (!ok) {
         p.broken = true;
-        p.err("Exited with an error", 3);
+        p.err("Exited with an error from " + get_string_from_opcode(instr.opcode));
     }
 
     if (p.pc == before && !p.completed && !p.broken) {

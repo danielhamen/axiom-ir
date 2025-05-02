@@ -7,6 +7,12 @@ std::shared_ptr<Object> parse_literal(const std::string& tok) {
     if (tok == "true")  return std::make_shared<Boolean>(true);
     if (tok == "false") return std::make_shared<Boolean>(false);
 
+    // --- Indefinites ---
+    if (tok == "nil") return Nil::instance();
+    if (tok == "nix") return Nix::instance();
+    if (tok == "nan") return NaN::instance();
+
+
     // --- Regular Expression Literals ---
     if (tok.size() >= 4 && tok[0] == 'r' && tok[1] == '/' && tok.find('/', 2) != std::string::npos) {
         auto lastSlash = tok.rfind('/');

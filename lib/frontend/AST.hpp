@@ -28,7 +28,9 @@ enum class ASTNodeType {
     CALL_EXPR,
     RETURN_STMT,
     STRUCT_DECL,
-    IMPORT_DECL
+    IMPORT_DECL,
+    FIELD_ACCESS,
+    NAMESPACE_DECL
 };
 
 // --- Base AST Node ---
@@ -50,6 +52,13 @@ struct Literal : ASTNode {
 struct Variable : ASTNode {
     std::string name;
     explicit Variable(const std::string& n);
+};
+
+// --- Namespace Reference Node ---
+struct Namespace : ASTNode {
+    std::shared_ptr<ASTNode> name;
+    std::vector<std::shared_ptr<ASTNode>> body;
+    explicit Namespace(const std::shared_ptr<ASTNode> n, std::vector<std::shared_ptr<ASTNode>> body);
 };
 
 // --- Binary Operation Node ---
@@ -203,9 +212,9 @@ struct FunctionStmt : ASTNode {
 // --- Access Node (e.g. "Math.sin") ---
 struct FieldAccess : ASTNode {
     std::shared_ptr<ASTNode> object;
-    std::string field;
+    std::shared_ptr<ASTNode> field;
 
-    FieldAccess(std::shared_ptr<ASTNode> object, const std::string& field);
+    FieldAccess(std::shared_ptr<ASTNode> object, std::shared_ptr<ASTNode> field);
 };
 
 // --- Call Expression Node ---

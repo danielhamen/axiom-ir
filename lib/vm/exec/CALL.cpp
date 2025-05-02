@@ -1,13 +1,25 @@
 #include <string>
 #include "CALL.hpp"
 #include "exec.hpp"
-bool exec::CALL(Process& p)  {
+bool exec::CALL(Process& p) {
+    const auto& b = p.module[p.pc];
+    if (b.operand.size() != 1) {
+        p.err("CALL expects 1 operand, got " + std::to_string(b.operand.size()));
+        return false;
+    }
+    const auto& nm = b.operand[0];
+    if (!p.labels.exists(nm)) {
+        p.err("Unknown label in CALL: '" + nm + "'");
+        return false;
+    }
+
+    // 1) push a new local scope
     p.env_stack.push_scope();
 
-    const auto& b = p.module[p.pc];
-    std::string nm = b.operand.at(0);
-    if (nm.size()<2 || nm[0] != '.' || !p.labels.exists(nm.substr(1))) return false;
+    // 2) save return address (next instruction)
     p.callstack.push(p.pc + 1);
-    p.pc = p.labels.get(nm.substr(1));
+
+    // 3) jump into the function
+    p.pc = p.labels.get(nm);
     return true;
 }

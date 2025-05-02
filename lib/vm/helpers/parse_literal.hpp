@@ -5,6 +5,9 @@
 #include <stdexcept>
 #include <memory>
 #include "../obj/Object.hpp"
+#include "../obj/Nil.hpp"
+#include "../obj/Nix.hpp"
+#include "../obj/NaN.hpp"
 #include "../obj/Boolean.hpp"
 #include "../obj/String.hpp"
 #include "../obj/Integer.hpp"

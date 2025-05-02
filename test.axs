@@ -1,10 +1,18 @@
-func print() {
-    Meta.Emit("(TIME)");
-    Meta.Write();
-    Meta.Emit("(PUSH, \"\\n\")");
-    Meta.Write();
-    Meta.Dump();
-    Meta.Flush();
+namespace Time {
+    func time() {
+        Meta.Time();
+        let _t = 3;
+        Meta.Pop(_t);
+        return _t;
+    }
 }
 
-print();
+namespace System {
+    namespace IO {
+        func print() {
+            return nil;
+        }
+    }
+}
+
+System.IO.print();

@@ -51,6 +51,7 @@ private:
     std::shared_ptr<ASTNode> parse_meta();
     std::shared_ptr<ASTNode> parse_guard();
     std::shared_ptr<ASTNode> parse_function();
+    std::shared_ptr<ASTNode> parse_namespace();
 
     // Utilities
     std::shared_ptr<BlockStmt> parse_block_already_open();

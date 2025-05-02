@@ -34,4 +34,5 @@ struct Process {
     void execute();
 
     void err(const std::string& message, const int& code);
+    void err(const std::string& message);
 };

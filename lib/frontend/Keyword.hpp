@@ -16,6 +16,7 @@ enum Keyword {
     KW_FN,              // inline-function declaration
     KW_LAMBDA,          // lambda-function declaration
     KW_FUNC,            // function declaration
+    KW_NAMESPACE,       // namespace declaration
     KW_STRUCT,          // struct declaration
     KW_IMPORT,          // import modules
     KW_EXPORT,          // export functions/types

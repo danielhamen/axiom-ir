@@ -6,21 +6,24 @@
 
 void Process::execute() {
     // Collect all labels
-    for (size_t c = 0; c < module.size(); c++) {
-        Bytecode b  = module.at(c);
+    for (size_t c = 0; c < module.size(); ++c) {
+        const Bytecode& b = module[c];
         if (b.opcode == OP_LABEL) {
-            pc = c;
-            bool ok = exec::LABEL(*this);
-            if (!ok) {
-                err("Error registering label", 2);
-                return;
+            const std::string& name = b.operand.at(0);
+
+            // Skip label if invalid
+            if (name.empty()) {
+                std::cerr << "Invalid label at index " << c << std::endl;
+                exit(3);
             }
-            pc = 0;
+
+            // Register the label → next instruction
+            labels.set(name, c + 1);
         }
     }
 
     if (!labels.exists("main")) {
-        err("Expected .main label. None found.", 1);
+        err("Expected .main label. None found.");
         return;
     }
 
@@ -31,6 +34,11 @@ void Process::execute() {
 }
 
 void Process::err(const std::string& message, const int& code) {
-    std::cerr << "An error occured during the bytecode execution." << std::endl << "\tDuring process count: " << pc << std::endl << message << std::endl;
-    exit(code);
+    std::cerr << "An error occured during the bytecode execution." << std::endl << "\tDuring process count: " << pc << std::endl << "Error: " << message << std::endl;
+    completed = true;
+    broken = true;
+}
+
+void Process::err(const std::string& message) {
+    err(message, -1);
 }

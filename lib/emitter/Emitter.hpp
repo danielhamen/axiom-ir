@@ -30,6 +30,11 @@ private:
     std::vector<Bytecode> emit_literal(const std::shared_ptr<Literal>& literal);
     std::vector<Bytecode> emit_variable(const std::shared_ptr<Variable>& variable);
     std::vector<Bytecode> emit_meta_stmt(const std::shared_ptr<MetaStmt>& metaStmt);
+    std::vector<Bytecode> emit_call_expr(const std::shared_ptr<CallExpr>& callExpr);
     std::vector<Bytecode> emit_if_stmt(const std::shared_ptr<IfStmt>& ifStmt);
     std::vector<Bytecode> emit_return(const std::shared_ptr<ReturnStmt>& ret);
+    std::vector<Bytecode> emit_namespace(const std::shared_ptr<Namespace>& ns);
+    std::vector<Bytecode> emit_field_access(const std::shared_ptr<FieldAccess>& fieldAccess);
 };
+
+std::string resolve_field_access(const std::shared_ptr<ASTNode>& callee);
