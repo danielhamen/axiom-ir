@@ -107,9 +107,12 @@ std::shared_ptr<ASTNode> Desugarer::desugar_func_decl(std::shared_ptr<FunctionSt
 }
 
 std::shared_ptr<ASTNode> Desugarer::desugar_return_stmt(std::shared_ptr<ReturnStmt> return_stmt) {
-    // if (return_stmt->value.has_value()) {
-    //     return_stmt->value = desugar_node(return_stmt->value.value());
-    // }
+    if (return_stmt->value.has_value()) {
+        return_stmt->value = desugar_node(return_stmt->value.value());
+    } else {
+        return_stmt->value = std::make_shared<Literal>("nil");
+    }
+
     return return_stmt;
 }
 

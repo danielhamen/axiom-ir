@@ -20,7 +20,8 @@ std::vector<Bytecode> Emitter::emit() {
         auto code = emit_node(node);
         for (auto b : code) {
             // std::cout << b.toString() << std::endl;
-            if (node->type == ASTNodeType::FUNCTION_STMT) {
+            if (node->type == ASTNodeType::FUNCTION_STMT ||
+                node->type == ASTNodeType::NAMESPACE_DECL) {
                 structural.push_back(b);
             } else {
                 main.push_back(b);
@@ -58,6 +59,10 @@ std::vector<Bytecode> Emitter::emit_node(const std::shared_ptr<ASTNode>& node) {
             return emit_call_expr(std::static_pointer_cast<CallExpr>(node));
         case ASTNodeType::EXPRESSION_STMT:
             return emit_expression_stmt(std::static_pointer_cast<ExpressionStmt>(node));
+        case ASTNodeType::NAMESPACE_DECL:
+            return emit_namespace(std::static_pointer_cast<Namespace>(node));
+        case ASTNodeType::FIELD_ACCESS:
+            return emit_field_access(std::static_pointer_cast<FieldAccess>(node));
         default:
             std::cout << ast_to_string(node) << std::endl;
             throw std::runtime_error("<unknown AST node type>");
@@ -91,6 +96,14 @@ std::vector<Bytecode> Emitter::emit_function_stmt(const std::shared_ptr<Function
     // // --- Function body label ---
     // code.push_back({ OP_LABEL, { ref_name } });
 
+    // Emit function arguments
+    for (auto p : funcStmt->params) {
+        auto param = std::dynamic_pointer_cast<Variable>(p.first);
+        auto type = std::dynamic_pointer_cast<Variable>(p.second);
+        code.push_back({ OP_DECL, { "$" + param->name } });
+        code.push_back({ OP_TYPE, { "$" + param->name, type->name } });
+    }
+
     // Emit function body
     for (auto stmt : funcStmt->body) {
         auto stmt_code = emit_node(stmt);
@@ -113,22 +126,149 @@ std::vector<Bytecode> Emitter::emit_return(const std::shared_ptr<ReturnStmt>& re
         code.insert(code.end(), value_code.begin(), value_code.end());
     }
 
+    code.push_back({ OP_RET, {} });
+
     return code;
 }
 
 std::vector<Bytecode> Emitter::emit_expression_stmt(const std::shared_ptr<ExpressionStmt>& exprStmt) {
-    std::vector<Bytecode> code;
-    std::cout << "Cannot directly emit expression statement" << std::endl;
+    return emit_node(exprStmt->expression);
+}
 
+std::string resolve_field_access(const std::shared_ptr<ASTNode>& node) {
+    if (!node) throw std::runtime_error("Cannot resolve null callee");
+
+    switch (node->type) {
+        case ASTNodeType::VARIABLE: {
+            auto var = std::static_pointer_cast<Variable>(node);
+            return var->name;
+        }
+
+        case ASTNodeType::FIELD_ACCESS: {
+            auto field = std::static_pointer_cast<FieldAccess>(node);
+            std::string base = resolve_field_access(field->object);
+            auto prop = std::dynamic_pointer_cast<Variable>(field->field);
+            if (!prop) {
+                throw std::runtime_error("FieldAccess right-hand side must be Variable.");
+            }
+            return base + "." + prop->name;
+        }
+
+        default:
+            throw std::runtime_error("Unsupported callee type in resolve_field_access");
+    }
+}
+
+
+// std::vector<Bytecode> Emitter::emit_call_expr(const std::shared_ptr<CallExpr>& callExpr) {
+//     std::vector<Bytecode> code;
+
+//     auto callee = resolve_field_access(callExpr->callee);
+
+//     // Push arguments RIGHT to LEFT
+//     for (int i = callExpr->arguments.size() - 1; i >= 0; i--) {
+//         auto b = emit_node(callExpr->arguments[i]);
+//         code.insert(code.end(), b.begin(), b.end());
+//     }
+
+//     code.push_back({ OP_CALL, { callee } });
+//     return code;
+// }
+
+
+
+// std::vector<Bytecode> Emitter::emit_field_access(const std::shared_ptr<FieldAccess>& fieldAccess) {
+//     std::vector<Bytecode> code;
+
+//     std::string full_name;
+//     std::shared_ptr<ASTNode> current = fieldAccess;
+
+//     // Collect field names in reverse order
+//     std::vector<std::string> components;
+
+//     // Walk the FieldAccess chain
+//     while (auto field = std::dynamic_pointer_cast<FieldAccess>(current)) {
+//         auto field_var = std::dynamic_pointer_cast<Variable>(field->field);
+//         if (!field_var) {
+//             throw std::runtime_error("FieldAccess::field must be Variable");
+//         }
+//         components.push_back(field_var->name);
+//         current = field->object;
+//     }
+
+//     // Add base object
+//     if (auto base = std::dynamic_pointer_cast<Variable>(current)) {
+//         components.push_back(base->name);
+//     } else {
+//         throw std::runtime_error("FieldAccess::base must be Variable");
+//     }
+
+//     // Reverse and join
+//     std::reverse(components.begin(), components.end());
+//     std::string full_access = "$" + components[0];
+//     for (size_t i = 1; i < components.size(); ++i) {
+//         full_access += "." + components[i];
+//     }
+
+//     code.push_back(Bytecode{OP_GET, {full_access}});
+//     return code;
+// }
+
+std::vector<Bytecode> Emitter::emit_call_expr(const std::shared_ptr<CallExpr>& call) {
+    std::vector<Bytecode> code;
+
+    // 1) emit the callee expression just once
+    auto callee_code = emit_node(call->callee);
+    code.insert(code.end(), callee_code.begin(), callee_code.end());
+
+    // 2) push arguments right→left
+    for (int i = int(call->arguments.size()) - 1; i >= 0; --i) {
+        auto argCode = emit_node(call->arguments[i]);
+        code.insert(code.end(), argCode.begin(), argCode.end());
+    }
+
+    // 3) generic call opcode
+    code.push_back({ OP_CALL, {} });
     return code;
 }
 
-std::vector<Bytecode> Emitter::emit_call_expr(const std::shared_ptr<CallExpr>& callExpr) {
+std::vector<Bytecode> Emitter::emit_field_access(const std::shared_ptr<FieldAccess>& fa) {
     std::vector<Bytecode> code;
-    std::cout << "Emitting call expression" << std::endl;
-    auto callee = std::dynamic_pointer_cast<Variable>(callExpr->callee);
-    code.push_back({ OP_CALL, { callee->name } });
 
+    // 1) emit receiver, once
+    auto receiver_code = emit_node(fa->object);
+    code.insert(code.end(),
+                receiver_code.begin(),
+                receiver_code.end());
+
+    // 2) turn the ASTNode field into its name
+    auto var = std::dynamic_pointer_cast<Variable>(fa->field);
+    if (!var) throw std::runtime_error("FieldAccess::field must be a Variable");
+    std::string fieldName = var->name;
+
+    // 3) push the field name as a literal string
+    code.push_back({ OP_PUSH, { "\"" + fieldName + "\"" } });
+
+    // 4) do the dynamic lookup
+    code.push_back({ OP_ACCESS, {} });
+    return code;
+}
+
+std::vector<Bytecode> Emitter::emit_namespace(const std::shared_ptr<Namespace>& ns) {
+    std::vector<Bytecode> code;
+
+    auto ns_name = std::dynamic_pointer_cast<Variable>(ns->name)->name;
+
+    for (const auto& stmt : ns->body) {
+        auto inner_code = emit_node(stmt);
+        for (auto& bc : inner_code) {
+            if (bc.opcode == OP_LABEL && !bc.operand.empty()) {
+                // Prefix label with namespace
+                bc.operand[0] = ns_name + "." + bc.operand[0];
+            }
+        }
+        code.insert(code.end(), inner_code.begin(), inner_code.end());
+    }
     return code;
 }
 
@@ -345,6 +485,14 @@ std::vector<Bytecode> Emitter::emit_declaration(const std::shared_ptr<Declaratio
 
         // 3b: after computing, set it into variable
         code.push_back(Bytecode{ OP_SET, { "$" + name } });
+
+        // 3c: cast to annotated type
+        if (decl->type_annotation) {
+          // push the ClassObject by name
+          code.push_back({ OP_GET, { decl->type_annotation.value() } });
+          // invoke it with 1 argument
+          code.push_back({ OP_CALL, {} });
+        }
     }
 
     return code;
@@ -389,7 +537,11 @@ private:
     std::vector<Bytecode> emit_call_expr(const std::shared_ptr<CallExpr>& callExpr);
     std::vector<Bytecode> emit_if_stmt(const std::shared_ptr<IfStmt>& ifStmt);
     std::vector<Bytecode> emit_return(const std::shared_ptr<ReturnStmt>& ret);
+    std::vector<Bytecode> emit_namespace(const std::shared_ptr<Namespace>& ns);
+    std::vector<Bytecode> emit_field_access(const std::shared_ptr<FieldAccess>& fieldAccess);
 };
+
+std::string resolve_field_access(const std::shared_ptr<ASTNode>& callee);
 
 # ```
 # 
@@ -450,31 +602,34 @@ enum TokenType {
 ```./frontend/match_keyword.cpp
 #include "match_keyword.hpp"
 std::optional<Keyword> match_keyword(const std::string& word) {
-    if (word == "let")      return KW_LET;
-    if (word == "if")       return KW_IF;
-    if (word == "elif")     return KW_ELIF;
-    if (word == "else")     return KW_ELSE;
-    if (word == "while")    return KW_WHILE;
-    if (word == "Meta")     return KW_META;
-    if (word == "guard")    return KW_GUARD;
-    if (word == "for")      return KW_FOR;
-    if (word == "in")       return KW_IN;
-    if (word == "break")    return KW_BREAK;
-    if (word == "continue") return KW_CONTINUE;
-    if (word == "return")   return KW_RETURN;
-    if (word == "func")     return KW_FUNC;
-    if (word == "fn")       return KW_FN;
-    if (word == "lambda")   return KW_LAMBDA;
-    if (word == "struct")   return KW_STRUCT;
-    if (word == "import")   return KW_IMPORT;
-    if (word == "export")   return KW_EXPORT;
-    if (word == "as")       return KW_AS;
-    if (word == "match")    return KW_MATCH;
-    if (word == "case")     return KW_CASE;
-    if (word == "default")  return KW_DEFAULT;
-    if (word == "true")     return KW_TRUE;
-    if (word == "false")    return KW_FALSE;
-    if (word == "null")     return KW_NULL;
+    if (word == "let")          return KW_LET;
+    if (word == "if")           return KW_IF;
+    if (word == "elif")         return KW_ELIF;
+    if (word == "else")         return KW_ELSE;
+    if (word == "while")        return KW_WHILE;
+    if (word == "Meta")         return KW_META;
+    if (word == "guard")        return KW_GUARD;
+    if (word == "for")          return KW_FOR;
+    if (word == "in")           return KW_IN;
+    if (word == "break")        return KW_BREAK;
+    if (word == "continue")     return KW_CONTINUE;
+    if (word == "return")       return KW_RETURN;
+    if (word == "func")         return KW_FUNC;
+    if (word == "fn")           return KW_FN;
+    if (word == "lambda")       return KW_LAMBDA;
+    if (word == "struct")       return KW_STRUCT;
+    if (word == "import")       return KW_IMPORT;
+    if (word == "export")       return KW_EXPORT;
+    if (word == "as")           return KW_AS;
+    if (word == "match")        return KW_MATCH;
+    if (word == "case")         return KW_CASE;
+    if (word == "default")      return KW_DEFAULT;
+    if (word == "true")         return KW_TRUE;
+    if (word == "false")        return KW_FALSE;
+    if (word == "nil")          return KW_NIL;
+    if (word == "nix")          return KW_NIX;
+    if (word == "nan")          return KW_NAN;
+    if (word == "namespace")    return KW_NAMESPACE;
     return std::nullopt;
 }
 
@@ -500,6 +655,7 @@ enum Keyword {
     KW_FN,              // inline-function declaration
     KW_LAMBDA,          // lambda-function declaration
     KW_FUNC,            // function declaration
+    KW_NAMESPACE,       // namespace declaration
     KW_STRUCT,          // struct declaration
     KW_IMPORT,          // import modules
     KW_EXPORT,          // export functions/types
@@ -509,7 +665,9 @@ enum Keyword {
     KW_DEFAULT,         // default branch inside match
     KW_TRUE,            // literal true
     KW_FALSE,           // literal false
-    KW_NULL,            // literal null
+    KW_NIL,             // literal nil
+    KW_NIX,             // literal nil
+    KW_NAN,             // literal nil
     KW_TRY,             // try block
     KW_CATCH,           // catch block
     KW_THROW,           // throw an error
@@ -630,9 +788,12 @@ std::shared_ptr<ASTNode> Desugarer::desugar_func_decl(std::shared_ptr<FunctionSt
 }
 
 std::shared_ptr<ASTNode> Desugarer::desugar_return_stmt(std::shared_ptr<ReturnStmt> return_stmt) {
-    // if (return_stmt->value.has_value()) {
-    //     return_stmt->value = desugar_node(return_stmt->value.value());
-    // }
+    if (return_stmt->value.has_value()) {
+        return_stmt->value = desugar_node(return_stmt->value.value());
+    } else {
+        return_stmt->value = std::make_shared<Literal>("nil");
+    }
+
     return return_stmt;
 }
 
@@ -717,6 +878,7 @@ private:
     std::shared_ptr<ASTNode> parse_meta();
     std::shared_ptr<ASTNode> parse_guard();
     std::shared_ptr<ASTNode> parse_function();
+    std::shared_ptr<ASTNode> parse_namespace();
 
     // Utilities
     std::shared_ptr<BlockStmt> parse_block_already_open();
@@ -753,6 +915,12 @@ Variable::Variable(const std::string& n) : name(n) {
     type = ASTNodeType::VARIABLE;
 }
 
+// --- Namespace Reference Node ---
+Namespace::Namespace(const std::shared_ptr<ASTNode> n, std::vector<std::shared_ptr<ASTNode>> body)
+    : name(n), body(std::move(body)) {
+    type = ASTNodeType::NAMESPACE_DECL;
+}
+
 // --- BinaryOp Constructor ---
 BinaryOp::BinaryOp(const std::string& oper, std::shared_ptr<ASTNode> lhs, std::shared_ptr<ASTNode> rhs)
     : op(oper), left(std::move(lhs)), right(std::move(rhs)) {
@@ -776,9 +944,10 @@ Declaration::Declaration(std::shared_ptr<ASTNode> pat,
 }
 
 // --- Field Access Constructor ---
-FieldAccess::FieldAccess(std::shared_ptr<ASTNode> object, const std::string& field)
-    : object(object),
-      field(field) {};
+FieldAccess::FieldAccess(std::shared_ptr<ASTNode> object, std::shared_ptr<ASTNode> field)
+    : object(std::move(object)), field(std::move(field)) {
+    type = ASTNodeType::FIELD_ACCESS;
+}
 
 // --- VariablePattern Constructor ---
 VariablePattern::VariablePattern(const std::string& n)
@@ -1010,7 +1179,21 @@ std::string ast_to_string(const std::shared_ptr<ASTNode>& node) {
                 }
             }
 
-            return "MetaStmt(" + ast_to_string(expr->ns) + ", (" + args + "))";
+            return "MetaStmt(" + ast_to_string(expr->ns) + ", " + ast_to_string(expr->call) + ", (" + args + "))";
+        }
+        case ASTNodeType::NAMESPACE_DECL: {
+            auto ns = static_cast<Namespace*>(node.get());
+            std::string body = "";
+            for (auto stmt : ns->body) {
+                body += ast_to_string(stmt) + "; ";
+            }
+
+            return "NamespaceStmt(" + ast_to_string(ns->name) + ", (" + body + "))";
+        }
+        case ASTNodeType::FIELD_ACCESS: {
+            auto expr = static_cast<FieldAccess*>(node.get());
+
+            return "FieldAccess(" + ast_to_string(expr->object) + ", " + ast_to_string(expr->field) + ")";
         }
         default:
             return "<unhandled node type '" + std::to_string(static_cast<int>(node->type)) + "'>";
@@ -1359,12 +1542,12 @@ void Parser::synchronize() {
 }
 
 std::shared_ptr<BlockStmt> Parser::parse_block() {
-    consume(TOK_LBRACE, "Expected '{'");
+    consume(TOK_LBRACE, "Expected '{' in parse_block");
     std::vector<std::shared_ptr<ASTNode>> stmts;
     while (!check(TOK_RBRACE) && !at_end()) {
         stmts.push_back(parse_statement());
     }
-    consume(TOK_RBRACE, "Expected '}'");
+    consume(TOK_RBRACE, "Expected '}' in parse_block");
     return std::make_shared<BlockStmt>(std::move(stmts));
 }
 
@@ -1402,6 +1585,7 @@ std::shared_ptr<ASTNode> Parser::parse_statement() {
         if (kw == Keyword::KW_RETURN) return parse_return();
         if (kw == Keyword::KW_META) return parse_meta();
         if (kw == Keyword::KW_FUNC) return parse_function();
+        if (kw == Keyword::KW_NAMESPACE) return parse_namespace();
     }
 
     // assignment
@@ -1409,7 +1593,7 @@ std::shared_ptr<ASTNode> Parser::parse_statement() {
         Token name = advance();
         advance();
         auto value = parse_expression();
-        consume(TOK_SEMICOLON, "Expected ';'");
+        consume(TOK_SEMICOLON, "Expected ';' in assignment");
         return std::make_shared<Assignment>(name.lexeme, value);
     }
 
@@ -1419,18 +1603,12 @@ std::shared_ptr<ASTNode> Parser::parse_statement() {
         auto iden = std::make_shared<Variable>(callee_name.lexeme);
         auto call = parse_call(iden);
         auto call_expr = std::dynamic_pointer_cast<CallExpr>(call);
-        consume(TOK_SEMICOLON, "Expected ';'");
+        consume(TOK_SEMICOLON, "Expected ';' in call");
         return call_expr;
     }
 
-    // accessor
-    if (check(TOK_IDENTIFIER) && tokens[current + 1].type == TOK_DOT) {
-        std::cerr << "Accessor Error. Not Implemented Yet." << std::endl;
-        exit(5);
-    }
-
     auto expr = parse_expression();
-    consume(TOK_SEMICOLON, "Expected ';'");
+    consume(TOK_SEMICOLON, "Expected ';' in expression");
     return std::make_shared<ExpressionStmt>(expr);
 }
 
@@ -1532,6 +1710,22 @@ std::shared_ptr<ASTNode> Parser::parse_function() {
 
 }
 
+std::shared_ptr<ASTNode> Parser::parse_namespace() {
+    consume(TOK_KEYWORD, "Expected 'namespace' keyword.");
+
+    auto name = std::make_shared<Variable>(consume(TOK_IDENTIFIER, "Expected namespace name.").lexeme);
+
+    if (!check(TOK_LBRACE)) throw std::runtime_error("Expected '{' after namespace name.");
+
+    auto block = parse_block();
+
+    return std::make_shared<Namespace>(
+        std::move(name),
+        std::move(block->statements)
+    );
+
+}
+
 std::shared_ptr<ASTNode> Parser::parse_guard() {
     consume(TOK_KEYWORD, "Expected 'guard'");
     auto condition = parse_expression();
@@ -1546,7 +1740,7 @@ std::shared_ptr<ASTNode> Parser::parse_guard() {
     } else {
         auto ex = parse_expression();
         else_branch = std::make_shared<ReturnStmt>(ex);
-        consume(TOK_SEMICOLON, "Expected ';'");
+        consume(TOK_SEMICOLON, "Expected ';' in guard");
     }
 
     return std::make_shared<GuardStmt>(condition, else_branch);
@@ -1593,7 +1787,7 @@ std::shared_ptr<ASTNode> Parser::parse_meta() {
 
     if (check(TOK_LPAREN)) {
         auto call = parse_call(accessor); // returns shared_ptr<ASTNode>
-        consume(TOK_SEMICOLON, "Expected ';'");
+        consume(TOK_SEMICOLON, "Expected ';' in meta");
 
         // Downcast to CallExpr
         auto call_expr = std::dynamic_pointer_cast<CallExpr>(call);
@@ -1607,7 +1801,7 @@ std::shared_ptr<ASTNode> Parser::parse_meta() {
             call_expr->arguments
         );
     } else if (check(TOK_SEMICOLON)) {
-        consume(TOK_SEMICOLON, "Expected ';'");
+        consume(TOK_SEMICOLON, "Expected ';' in meta(2)");
 
         return std::make_shared<MetaStmt>(
             a_ns,
@@ -1715,7 +1909,7 @@ std::shared_ptr<ASTNode> Parser::parse_primary() {
     }
     if (match({TOK_KEYWORD})) {
         auto kw = previous().keyword.value();
-        if (kw == Keyword::KW_TRUE || kw == Keyword::KW_FALSE || kw == Keyword::KW_NULL) {
+        if (kw == Keyword::KW_TRUE || kw == Keyword::KW_FALSE || kw == Keyword::KW_NIL || kw == Keyword::KW_NIX || kw == Keyword::KW_NAN) {
             return std::make_shared<Literal>(previous().lexeme);
         }
 
@@ -1752,7 +1946,7 @@ std::shared_ptr<ASTNode> Parser::parse_primary() {
 
         while (match({TOK_DOT})) {
             Token name = consume(TOK_IDENTIFIER, "Expected property name after '.'");
-            expr = std::make_shared<FieldAccess>(expr, name.lexeme);
+            expr = std::make_shared<FieldAccess>(expr, std::make_shared<Variable>(name.lexeme));
         }
 
         if (check(TOK_LPAREN)) {
@@ -1820,7 +2014,9 @@ enum class ASTNodeType {
     CALL_EXPR,
     RETURN_STMT,
     STRUCT_DECL,
-    IMPORT_DECL
+    IMPORT_DECL,
+    FIELD_ACCESS,
+    NAMESPACE_DECL,
 };
 
 // --- Base AST Node ---
@@ -1842,6 +2038,13 @@ struct Literal : ASTNode {
 struct Variable : ASTNode {
     std::string name;
     explicit Variable(const std::string& n);
+};
+
+// --- Namespace Reference Node ---
+struct Namespace : ASTNode {
+    std::shared_ptr<ASTNode> name;
+    std::vector<std::shared_ptr<ASTNode>> body;
+    explicit Namespace(const std::shared_ptr<ASTNode> n, std::vector<std::shared_ptr<ASTNode>> body);
 };
 
 // --- Binary Operation Node ---
@@ -1995,9 +2198,9 @@ struct FunctionStmt : ASTNode {
 // --- Access Node (e.g. "Math.sin") ---
 struct FieldAccess : ASTNode {
     std::shared_ptr<ASTNode> object;
-    std::string field;
+    std::shared_ptr<ASTNode> field;
 
-    FieldAccess(std::shared_ptr<ASTNode> object, const std::string& field);
+    FieldAccess(std::shared_ptr<ASTNode> object, std::shared_ptr<ASTNode> field);
 };
 
 // --- Call Expression Node ---
@@ -2089,131 +2292,33 @@ public:
 # ```
 # 
 
-```./vm/obj/Decimal.cpp
-#include "Decimal.hpp"
-#include "Integer.hpp"
-#include "Boolean.hpp"
-#include "String.hpp"
-#include <memory>
+```./vm/obj/NaN.cpp
+#include "NaN.hpp"
+#include <limits>
 
-Decimal::Decimal(double v) : value(v) {}
-
-std::string Decimal::__str__() const {
-    return std::to_string(value);
+std::string NaN::__str__() const {
+    return "NaN";
 }
 
-bool Decimal::__bool__() const {
-    return value != 0.0;
+bool NaN::__bool__() const {
+    return false;
 }
 
-std::string Decimal::__name__() const {
-    return "decimal";
+double NaN::__double__() const {
+    return std::numeric_limits<double>::quiet_NaN();
 }
 
-std::shared_ptr<Object> Decimal::__add__(const Object& o) const {
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
-        return std::make_shared<Decimal>(value + p->value);
-    }
-    if (const auto* p = dynamic_cast<const Integer*>(&o)) {
-        return std::make_shared<Decimal>(value + static_cast<double>(p->value));
-    }
-    if (const auto* p = dynamic_cast<const String*>(&o)) {
-        return std::make_shared<String>(__str__() + p->value);
-    }
-    throw std::runtime_error("TypeError: decimal + " + o.__name__());
+int64_t NaN::__int__() const {
+    return 0;
 }
 
-std::shared_ptr<Object> Decimal::__sub__(const Object& o) const {
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
-        return std::make_shared<Decimal>(value - p->value);
-    }
-    if (const auto* p = dynamic_cast<const Integer*>(&o)) {
-        return std::make_shared<Decimal>(value - static_cast<double>(p->value));
-    }
-    throw std::runtime_error("TypeError: decimal - " + o.__name__());
+std::string NaN::__name__() const {
+    return "NaN";
 }
 
-std::shared_ptr<Object> Decimal::__mul__(const Object& o) const {
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
-        return std::make_shared<Decimal>(value * p->value);
-    }
-    if (const auto* p = dynamic_cast<const Integer*>(&o)) {
-        return std::make_shared<Decimal>(value * static_cast<double>(p->value));
-    }
-    throw std::runtime_error("TypeError: decimal * " + o.__name__());
-}
-
-std::shared_ptr<Object> Decimal::__div__(const Object& o) const {
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
-        if (p->value == 0.0) throw std::runtime_error("ZeroDivisionError: decimal / decimal");
-        return std::make_shared<Decimal>(value / p->value);
-    }
-    if (const auto* p = dynamic_cast<const Integer*>(&o)) {
-        if (p->value == 0) throw std::runtime_error("ZeroDivisionError: decimal / integer");
-        return std::make_shared<Decimal>(value / static_cast<double>(p->value));
-    }
-    throw std::runtime_error("TypeError: decimal / " + o.__name__());
-}
-
-std::shared_ptr<Object> Decimal::__eq__(const Object& o) const {
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
-        return std::make_shared<Boolean>(value == p->value);
-    }
-    if (const auto* p = dynamic_cast<const Integer*>(&o)) {
-        return std::make_shared<Boolean>(value == static_cast<double>(p->value));
-    }
-    return std::make_shared<Boolean>(false);
-}
-
-std::shared_ptr<Object> Decimal::__lt__(const Object& o) const {
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
-        return std::make_shared<Boolean>(value < p->value);
-    }
-    if (const auto* p = dynamic_cast<const Integer*>(&o)) {
-        return std::make_shared<Boolean>(value < static_cast<double>(p->value));
-    }
-    throw std::runtime_error("TypeError: decimal < " + o.__name__());
-}
-
-std::shared_ptr<Object> Decimal::__gt__(const Object& o) const {
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
-        return std::make_shared<Boolean>(value > p->value);
-    }
-    if (const auto* p = dynamic_cast<const Integer*>(&o)) {
-        return std::make_shared<Boolean>(value > static_cast<double>(p->value));
-    }
-    throw std::runtime_error("TypeError: decimal > " + o.__name__());
-}
-
-std::shared_ptr<Object> Decimal::__le__(const Object& o) const {
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
-        return std::make_shared<Boolean>(value <= p->value);
-    }
-    if (const auto* p = dynamic_cast<const Integer*>(&o)) {
-        return std::make_shared<Boolean>(value <= static_cast<double>(p->value));
-    }
-    throw std::runtime_error("TypeError: decimal <= " + o.__name__());
-}
-
-std::shared_ptr<Object> Decimal::__ge__(const Object& o) const {
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
-        return std::make_shared<Boolean>(value >= p->value);
-    }
-    if (const auto* p = dynamic_cast<const Integer*>(&o)) {
-        return std::make_shared<Boolean>(value >= static_cast<double>(p->value));
-    }
-    throw std::runtime_error("TypeError: decimal >= " + o.__name__());
-}
-
-
-std::shared_ptr<Object> Decimal::__or__(const Object& o) const {
-    return std::make_shared<Boolean>(__bool__() || o.__bool__());
-}
-std::shared_ptr<Object> Decimal::__and__(const Object& o) const {
-    return std::make_shared<Boolean>(__bool__() && o.__bool__());
-}
-std::shared_ptr<Object> Decimal::__not__() const {
-    return std::make_shared<Boolean>(!__bool__());
+std::shared_ptr<NaN> NaN::instance() {
+    static std::shared_ptr<NaN> inst = std::make_shared<NaN>();
+    return inst;
 }
 
 # ```
@@ -2238,6 +2343,113 @@ public:
 # ```
 # 
 
+```./vm/obj/BuiltinFn.hpp
+#pragma once
+
+#include <functional>
+#include <string>
+#include "../core/Process.hpp"
+#include "Object.hpp"
+
+class BuiltinFn : public Object {
+public:
+    // The wrapped C++ function takes the VM process and returns
+    // true on success (false → error)
+    using FnType = std::function<bool(Process&)>;
+
+    BuiltinFn(FnType fn, std::string name);
+
+    // Object interface
+    std::string __str__()   const override;
+    bool        __bool__()  const override;
+    std::string __name__()  const override;
+
+    // Invoke this function in the VM
+    bool invoke(Process& p) const;
+
+private:
+    FnType      fn_;
+    std::string name_;
+};
+
+# ```
+# 
+
+```./vm/obj/FunctionObject.cpp
+// vm/obj/FunctionObject.cpp
+#include "FunctionObject.hpp"
+#include <stdexcept>
+
+FunctionObject::FunctionObject(std::string label, size_t arity)
+  : label_(std::move(label)), arity_(arity), receiver_(nullptr)
+{}
+
+FunctionObject::FunctionObject(std::string label, size_t arity, std::shared_ptr<Object> receiver)
+  : label_(std::move(label)), arity_(arity), receiver_(std::move(receiver))
+{}
+
+std::string FunctionObject::__str__() const {
+    return "<function " + label_ + ">";
+}
+
+bool FunctionObject::__bool__() const {
+    return true;
+}
+
+std::string FunctionObject::__name__() const {
+    return label_;
+}
+
+bool FunctionObject::invoke(Process& p) const {
+    // 1) make sure there are enough args on the stack
+    if (p.stack.size() < arity_) {
+        throw std::runtime_error("Call to " + label_ + " expects "
+                                 + std::to_string(arity_) + " arguments");
+    }
+
+    // 2) push a new local-scope frame
+    p.env_stack.push_scope();
+
+    // 3) if this was a bound method, bind it as `this`
+    if (receiver_) {
+        p.env_stack.declare("this");
+        p.env_stack.set("this", receiver_);
+    }
+
+    // (The function’s own Bytecode will DECL its parameters in order,
+    // so we don’t need to name them here.)
+
+    // 4) save return address
+    p.callstack.push(p.pc + 1);
+
+    // 5) jump to the function’s label
+    if (!p.labels.exists(label_)) {
+        throw std::runtime_error("Unknown function label: " + label_);
+    }
+    p.pc = p.labels.get(label_);
+    return true;
+}
+
+# ```
+# 
+
+```./vm/obj/Nil.hpp
+#pragma once
+#include "Object.hpp"
+
+class Nil : public Object {
+public:
+    std::string __str__() const override;
+    bool __bool__() const override;
+    std::string __name__() const override;
+
+    // Singleton pattern
+    static std::shared_ptr<Nil> instance();
+};
+
+# ```
+# 
+
 ```./vm/obj/Scalar.cpp
 #include "Scalar.hpp"
 
@@ -2248,82 +2460,188 @@ public:
 #include "Object.hpp"
 #include <stdexcept>
 
+// Arithmetic & comparison
 std::shared_ptr<Object> Object::__add__ (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for +"); }
 std::shared_ptr<Object> Object::__sub__ (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for -"); }
 std::shared_ptr<Object> Object::__mul__ (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for *"); }
 std::shared_ptr<Object> Object::__div__ (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for /"); }
+std::shared_ptr<Object> Object::__pow__ (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for **"); }
 std::shared_ptr<Object> Object::__mod__ (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for %"); }
+
 std::shared_ptr<Object> Object::__eq__  (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for =="); }
 std::shared_ptr<Object> Object::__lt__  (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for <"); }
 std::shared_ptr<Object> Object::__gt__  (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for >"); }
 std::shared_ptr<Object> Object::__le__  (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for <="); }
 std::shared_ptr<Object> Object::__ge__  (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for >="); }
-std::shared_ptr<Object> Object::__or__  (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for ||"); }
-std::shared_ptr<Object> Object::__and__  (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for &&"); }
-std::shared_ptr<Object> Object::__not__  () const { throw std::runtime_error("Unsupported operand type(s) for !"); }
 
+std::shared_ptr<Object> Object::__and__ (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for &&"); }
+std::shared_ptr<Object> Object::__or__  (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for ||"); }
+std::shared_ptr<Object> Object::__not__ () const                { throw std::runtime_error("Unsupported operand type(s) for !"); }
+
+// Numeric unary
+std::shared_ptr<Object> Object::__abs__() const     { throw std::runtime_error("Unsupported operand type(s) for abs()"); }
+std::shared_ptr<Object> Object::__sqrt__() const    { throw std::runtime_error("Unsupported operand type(s) for sqrt()"); }
+
+// Logarithmic
+std::shared_ptr<Object> Object::__ln__   (const Object& o) const { throw std::runtime_error("Unsupported operand type(s) for ln()"); }
+std::shared_ptr<Object> Object::__log10__() const                { throw std::runtime_error("Unsupported operand type(s) for log10()"); }
+std::shared_ptr<Object> Object::__log2__ () const                { throw std::runtime_error("Unsupported operand type(s) for log2()"); }
+std::shared_ptr<Object> Object::__exp__  () const                { throw std::runtime_error("Unsupported operand type(s) for exp()"); }
+
+// Trigonometric
+std::shared_ptr<Object> Object::__sin__()     const { throw std::runtime_error("Unsupported operand type(s) for sin()"); }
+std::shared_ptr<Object> Object::__cos__()     const { throw std::runtime_error("Unsupported operand type(s) for cos()"); }
+std::shared_ptr<Object> Object::__tan__()     const { throw std::runtime_error("Unsupported operand type(s) for tan()"); }
+std::shared_ptr<Object> Object::__csc__()     const { throw std::runtime_error("Unsupported operand type(s) for csc()"); }
+std::shared_ptr<Object> Object::__sec__()     const { throw std::runtime_error("Unsupported operand type(s) for sec()"); }
+std::shared_ptr<Object> Object::__cot__()     const { throw std::runtime_error("Unsupported operand type(s) for cot()"); }
+
+// Inverse trig
+std::shared_ptr<Object> Object::__arcsin__()  const { throw std::runtime_error("Unsupported operand type(s) for arcsin()"); }
+std::shared_ptr<Object> Object::__arccos__()  const { throw std::runtime_error("Unsupported operand type(s) for arccos()"); }
+std::shared_ptr<Object> Object::__arctan__()  const { throw std::runtime_error("Unsupported operand type(s) for arctan()"); }
+std::shared_ptr<Object> Object::__arccsc__()  const { throw std::runtime_error("Unsupported operand type(s) for arccsc()"); }
+std::shared_ptr<Object> Object::__arcsec__()  const { throw std::runtime_error("Unsupported operand type(s) for arcsec()"); }
+std::shared_ptr<Object> Object::__arccot__()  const { throw std::runtime_error("Unsupported operand type(s) for arccot()"); }
+
+// Iteration
 std::shared_ptr<Object> Object::__iter__() const { throw std::runtime_error("Object is not iterable"); }
 std::shared_ptr<Object> Object::__next__()       { throw std::runtime_error("Iteration not supported"); }
 
-# ```
-# 
 
-```./vm/obj/Undefined.cpp
-#include "Undefined.hpp"
-#include "Boolean.hpp"
-#include "String.hpp"
-#include <memory>
-
-Undefined::Undefined() {}
-
-std::string Undefined::__str__() const {
-    return "undefined";
+std::shared_ptr<Object> Object::getField(const std::string& name)  {
+  return nullptr;
+}
+void Object::setField(const std::string& name,
+                      std::shared_ptr<Object> value) {
+  throw std::runtime_error(
+    __name__() + " is not an instance and cannot have fields"
+  );
 }
 
-bool Undefined::__bool__() const {
+bool Object::hasMethod(const std::string& /*name*/) {
     return false;
 }
 
-std::string Undefined::__name__() const {
-    return "undefined";
-}
-
-std::shared_ptr<Object> Undefined::__add__(const Object& o) const {
-    return std::make_shared<String>("undefined" + o.__str__());
-}
-
-std::shared_ptr<Object> Undefined::__eq__(const Object& o) const {
-    return std::make_shared<Boolean>(false);
+std::shared_ptr<Object> Object::getMethod(const std::string& /*name*/) {
+    return nullptr;
 }
 
 # ```
 # 
 
-```./vm/obj/Scientific.hpp
+```./vm/obj/Nix.hpp
+#pragma once
+#include "Object.hpp"
+
+class Nix : public Object {
+public:
+    std::string __str__() const override;
+    bool __bool__() const override;
+    std::string __name__() const override;
+
+    // Prevent any operation on undefined
+    std::shared_ptr<Object> __add__(const Object&) const override;
+    std::shared_ptr<Object> __not__() const override;
+
+    static std::shared_ptr<Nix> instance();
+};
+
+# ```
+# 
+
+```./vm/obj/Float.hpp
 #pragma once
 #include "Scalar.hpp"
-#include <string>
 
-class Scientific : public Scalar {
+class Float : public Scalar {
 public:
     double value;
-
-    Scientific(double v);
+    Float(double v);
 
     std::string __str__() const override;
     bool __bool__() const override;
     std::string __name__() const override;
 
-    std::shared_ptr<Object> __add__ (const Object& o) const override;
-    std::shared_ptr<Object> __sub__ (const Object& o) const override;
-    std::shared_ptr<Object> __mul__ (const Object& o) const override;
-    std::shared_ptr<Object> __div__ (const Object& o) const override;
+    std::shared_ptr<Object> __add__(const Object& o) const override;
+    std::shared_ptr<Object> __sub__(const Object& o) const override;
+    std::shared_ptr<Object> __mul__(const Object& o) const override;
+    std::shared_ptr<Object> __div__(const Object& o) const override;
 
-    std::shared_ptr<Object> __eq__  (const Object& o) const override;
-    std::shared_ptr<Object> __lt__  (const Object& o) const override;
-    std::shared_ptr<Object> __gt__  (const Object& o) const override;
-    std::shared_ptr<Object> __le__  (const Object& o) const override;
-    std::shared_ptr<Object> __ge__  (const Object& o) const override;
+    std::shared_ptr<Object> __eq__ (const Object& o) const override;
+    std::shared_ptr<Object> __lt__ (const Object& o) const override;
+    std::shared_ptr<Object> __gt__ (const Object& o) const override;
+    std::shared_ptr<Object> __le__ (const Object& o) const override;
+    std::shared_ptr<Object> __ge__ (const Object& o) const override;
+    std::shared_ptr<Object> __and__(const Object& o) const override;
+    std::shared_ptr<Object> __or__ (const Object& o) const override;
+    std::shared_ptr<Object> __not__() const override;
+};
+
+# ```
+# 
+
+```./vm/obj/ClassObject.cpp
+#include "ClassObject.hpp"
+#include <stdexcept>
+
+ClassObject::ClassObject(std::string name, size_t arity, FactoryFn factory)
+  : name_(std::move(name))
+  , arity_(arity)
+  , factory_(std::move(factory))
+{}
+
+bool ClassObject::invoke(Process& p) const {
+    if (p.stack.size() < arity_) {
+        throw std::runtime_error(
+          "Constructor " + name_ + " expects "
+          + std::to_string(arity_) + " arguments");
+    }
+
+    // 1) pop the args in reverse order
+    std::vector<std::shared_ptr<Object>> args(arity_);
+    for (size_t i = 0; i < arity_; ++i) {
+        args[arity_ - 1 - i] = p.stack.pop();
+    }
+
+    // 2) call your factory to build & initialize
+    auto instance = factory_(args);
+    if (!instance) {
+        throw std::runtime_error("Factory for " + name_ + " returned null");
+    }
+
+    // 3) push the new instance
+    p.stack.push(instance);
+    return true;
+}
+
+# ```
+# 
+
+```./vm/obj/List.hpp
+#pragma once
+#include "Object.hpp"
+#include <vector>
+#include <memory>
+#include <string>
+
+class List : public Object {
+public:
+    std::vector<std::shared_ptr<Object>> items;
+
+    List();
+
+    std::string __str__() const override;
+    std::string __name__() const override;
+    bool __bool__() const override;
+    int64_t __int__() const override;
+    double __double__() const override;
+
+    std::shared_ptr<Object> get_at(const std::shared_ptr<Object>& index) const;
+    void set_at(const std::shared_ptr<Object>& index, const std::shared_ptr<Object>& value);
+    void insert(const std::shared_ptr<Object>& index, const std::shared_ptr<Object>& value);
+    void remove(const std::shared_ptr<Object>& value);
+    size_t size() const;
 };
 
 # ```
@@ -2369,6 +2687,30 @@ std::shared_ptr<Object> String::__mul__(const Object& o) const {
 # ```
 # 
 
+```./vm/obj/Nil.cpp
+#include "Nil.hpp"
+#include "Nil.hpp"
+
+std::string Nil::__str__() const {
+    return "null";
+}
+
+bool Nil::__bool__() const {
+    return false;
+}
+
+std::string Nil::__name__() const {
+    return "Nil";
+}
+
+std::shared_ptr<Nil> Nil::instance() {
+    static std::shared_ptr<Nil> inst = std::make_shared<Nil>();
+    return inst;
+}
+
+# ```
+# 
+
 ```./vm/obj/Object.hpp
 #pragma once
 #include <string>
@@ -2385,12 +2727,32 @@ public:
     virtual std::shared_ptr<Object> __sub__ (const Object& o) const;
     virtual std::shared_ptr<Object> __mul__ (const Object& o) const;
     virtual std::shared_ptr<Object> __div__ (const Object& o) const;
+    virtual std::shared_ptr<Object> __pow__ (const Object& o) const;
+    virtual std::shared_ptr<Object> __abs__ () const;
+    virtual std::shared_ptr<Object> __sqrt__ () const;
     virtual std::shared_ptr<Object> __mod__ (const Object& o) const;
     virtual std::shared_ptr<Object> __eq__  (const Object& o) const;
     virtual std::shared_ptr<Object> __lt__  (const Object& o) const;
     virtual std::shared_ptr<Object> __gt__  (const Object& o) const;
     virtual std::shared_ptr<Object> __le__  (const Object& o) const;
     virtual std::shared_ptr<Object> __ge__  (const Object& o) const;
+    virtual std::shared_ptr<Object> __ln__  (const Object& o) const;
+    virtual std::shared_ptr<Object> __log10__  () const;
+    virtual std::shared_ptr<Object> __log2__  () const;
+    virtual std::shared_ptr<Object> __sin__() const;
+    virtual std::shared_ptr<Object> __cos__() const;
+    virtual std::shared_ptr<Object> __tan__() const;
+    virtual std::shared_ptr<Object> __csc__() const;
+    virtual std::shared_ptr<Object> __sec__() const;
+    virtual std::shared_ptr<Object> __cot__() const;
+    virtual std::shared_ptr<Object> __arcsin__() const;
+    virtual std::shared_ptr<Object> __arccos__() const;
+    virtual std::shared_ptr<Object> __arctan__() const;
+    virtual std::shared_ptr<Object> __arccsc__() const;
+    virtual std::shared_ptr<Object> __arcsec__() const;
+    virtual std::shared_ptr<Object> __arccot__() const;
+    virtual std::shared_ptr<Object> __exp__() const;
+
     virtual std::shared_ptr<Object> __and__(const Object& o) const;
     virtual std::shared_ptr<Object> __or__ (const Object& o) const;
     virtual std::shared_ptr<Object> __not__() const;
@@ -2398,6 +2760,13 @@ public:
     // iteration protocol
     virtual std::shared_ptr<Object> __iter__() const;
     virtual std::shared_ptr<Object> __next__();
+
+    // method protocol
+    virtual std::shared_ptr<Object> getField(const std::string& name);
+    virtual void setField(const std::string& name,
+                            std::shared_ptr<Object> value);
+    virtual bool hasMethod(const std::string& name);
+    virtual std::shared_ptr<Object> getMethod(const std::string& name);
 
     virtual std::string __name__() const = 0;
     virtual ~Object() = default;
@@ -2418,110 +2787,74 @@ public:
 # ```
 # 
 
-```./vm/obj/Undefined.hpp
-#pragma once
-#include "Object.hpp"
-
-class Undefined : public Object {
-public:
-    Undefined();
-
-    std::string __str__() const override;
-    bool __bool__() const override;
-    std::string __name__() const override;
-
-    std::shared_ptr<Object> __add__ (const Object& o) const override;
-    std::shared_ptr<Object> __eq__  (const Object& o) const override;
-};
-
-# ```
-# 
-
-```./vm/obj/Scientific.cpp
-#include "Scientific.hpp"
-#include "Decimal.hpp"
+```./vm/obj/Float.cpp
+#include "Float.hpp"
 #include "Integer.hpp"
 #include "Boolean.hpp"
-#include <sstream>
+#include "String.hpp"
 #include <memory>
 
-Scientific::Scientific(double v) : value(v) {}
+Float::Float(double v) : value(v) {}
 
-std::string Scientific::__str__() const {
-    std::ostringstream ss;
-    ss.precision(10);
-    ss << std::scientific << value;
-    return ss.str();
+std::string Float::__str__() const {
+    return std::to_string(value);
 }
 
-bool Scientific::__bool__() const {
+bool Float::__bool__() const {
     return value != 0.0;
 }
 
-std::string Scientific::__name__() const {
-    return "scientific";
+std::string Float::__name__() const {
+    return "decimal";
 }
 
-std::shared_ptr<Object> Scientific::__add__(const Object& o) const {
-    if (const auto* p = dynamic_cast<const Scientific*>(&o)) {
-        return std::make_shared<Scientific>(value + p->value);
-    }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
-        return std::make_shared<Scientific>(value + p->value);
+std::shared_ptr<Object> Float::__add__(const Object& o) const {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
+        return std::make_shared<Float>(value + p->value);
     }
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
-        return std::make_shared<Scientific>(value + static_cast<double>(p->value));
+        return std::make_shared<Float>(value + static_cast<double>(p->value));
     }
-    throw std::runtime_error("TypeError: scientific + " + o.__name__());
+    if (const auto* p = dynamic_cast<const String*>(&o)) {
+        return std::make_shared<String>(__str__() + p->value);
+    }
+    throw std::runtime_error("TypeError: decimal + " + o.__name__());
 }
 
-std::shared_ptr<Object> Scientific::__sub__(const Object& o) const {
-    if (const auto* p = dynamic_cast<const Scientific*>(&o)) {
-        return std::make_shared<Scientific>(value - p->value);
-    }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
-        return std::make_shared<Scientific>(value - p->value);
+std::shared_ptr<Object> Float::__sub__(const Object& o) const {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
+        return std::make_shared<Float>(value - p->value);
     }
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
-        return std::make_shared<Scientific>(value - static_cast<double>(p->value));
+        return std::make_shared<Float>(value - static_cast<double>(p->value));
     }
-    throw std::runtime_error("TypeError: scientific - " + o.__name__());
+    throw std::runtime_error("TypeError: decimal - " + o.__name__());
 }
 
-std::shared_ptr<Object> Scientific::__mul__(const Object& o) const {
-    if (const auto* p = dynamic_cast<const Scientific*>(&o)) {
-        return std::make_shared<Scientific>(value * p->value);
-    }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
-        return std::make_shared<Scientific>(value * p->value);
+std::shared_ptr<Object> Float::__mul__(const Object& o) const {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
+        return std::make_shared<Float>(value * p->value);
     }
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
-        return std::make_shared<Scientific>(value * static_cast<double>(p->value));
+        return std::make_shared<Float>(value * static_cast<double>(p->value));
     }
-    throw std::runtime_error("TypeError: scientific * " + o.__name__());
+    throw std::runtime_error("TypeError: decimal * " + o.__name__());
 }
 
-std::shared_ptr<Object> Scientific::__div__(const Object& o) const {
-    if (const auto* p = dynamic_cast<const Scientific*>(&o)) {
-        if (p->value == 0.0) throw std::runtime_error("ZeroDivisionError");
-        return std::make_shared<Scientific>(value / p->value);
-    }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
-        if (p->value == 0.0) throw std::runtime_error("ZeroDivisionError");
-        return std::make_shared<Scientific>(value / p->value);
+std::shared_ptr<Object> Float::__div__(const Object& o) const {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
+        if (p->value == 0.0) throw std::runtime_error("ZeroDivisionError: decimal / decimal");
+        return std::make_shared<Float>(value / p->value);
     }
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
-        if (p->value == 0) throw std::runtime_error("ZeroDivisionError");
-        return std::make_shared<Scientific>(value / static_cast<double>(p->value));
+        if (p->value == 0) throw std::runtime_error("ZeroDivisionError: decimal / integer");
+        return std::make_shared<Float>(value / static_cast<double>(p->value));
     }
-    throw std::runtime_error("TypeError: scientific / " + o.__name__());
+    throw std::runtime_error("TypeError: decimal / " + o.__name__());
 }
 
-std::shared_ptr<Object> Scientific::__eq__(const Object& o) const {
-    if (const auto* p = dynamic_cast<const Scientific*>(&o)) {
-        return std::make_shared<Boolean>(value == p->value);
-    }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
+std::shared_ptr<Object> Float::__eq__(const Object& o) const {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
         return std::make_shared<Boolean>(value == p->value);
     }
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
@@ -2530,56 +2863,215 @@ std::shared_ptr<Object> Scientific::__eq__(const Object& o) const {
     return std::make_shared<Boolean>(false);
 }
 
-std::shared_ptr<Object> Scientific::__lt__(const Object& o) const {
-    if (const auto* p = dynamic_cast<const Scientific*>(&o)) {
-        return std::make_shared<Boolean>(value < p->value);
-    }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
+std::shared_ptr<Object> Float::__lt__(const Object& o) const {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
         return std::make_shared<Boolean>(value < p->value);
     }
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
         return std::make_shared<Boolean>(value < static_cast<double>(p->value));
     }
-    throw std::runtime_error("TypeError: scientific < " + o.__name__());
+    throw std::runtime_error("TypeError: decimal < " + o.__name__());
 }
 
-std::shared_ptr<Object> Scientific::__gt__(const Object& o) const {
-    if (const auto* p = dynamic_cast<const Scientific*>(&o)) {
-        return std::make_shared<Boolean>(value > p->value);
-    }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
+std::shared_ptr<Object> Float::__gt__(const Object& o) const {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
         return std::make_shared<Boolean>(value > p->value);
     }
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
         return std::make_shared<Boolean>(value > static_cast<double>(p->value));
     }
-    throw std::runtime_error("TypeError: scientific > " + o.__name__());
+    throw std::runtime_error("TypeError: decimal > " + o.__name__());
 }
 
-std::shared_ptr<Object> Scientific::__le__(const Object& o) const {
-    if (const auto* p = dynamic_cast<const Scientific*>(&o)) {
-        return std::make_shared<Boolean>(value <= p->value);
-    }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
+std::shared_ptr<Object> Float::__le__(const Object& o) const {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
         return std::make_shared<Boolean>(value <= p->value);
     }
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
         return std::make_shared<Boolean>(value <= static_cast<double>(p->value));
     }
-    throw std::runtime_error("TypeError: scientific <= " + o.__name__());
+    throw std::runtime_error("TypeError: decimal <= " + o.__name__());
 }
 
-std::shared_ptr<Object> Scientific::__ge__(const Object& o) const {
-    if (const auto* p = dynamic_cast<const Scientific*>(&o)) {
-        return std::make_shared<Boolean>(value >= p->value);
-    }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
+std::shared_ptr<Object> Float::__ge__(const Object& o) const {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
         return std::make_shared<Boolean>(value >= p->value);
     }
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
         return std::make_shared<Boolean>(value >= static_cast<double>(p->value));
     }
-    throw std::runtime_error("TypeError: scientific >= " + o.__name__());
+    throw std::runtime_error("TypeError: decimal >= " + o.__name__());
+}
+
+
+std::shared_ptr<Object> Float::__or__(const Object& o) const {
+    return std::make_shared<Boolean>(__bool__() || o.__bool__());
+}
+std::shared_ptr<Object> Float::__and__(const Object& o) const {
+    return std::make_shared<Boolean>(__bool__() && o.__bool__());
+}
+std::shared_ptr<Object> Float::__not__() const {
+    return std::make_shared<Boolean>(!__bool__());
+}
+
+# ```
+# 
+
+```./vm/obj/Nix.cpp
+#include "Nix.hpp"
+#include <stdexcept>
+
+std::string Nix::__str__() const {
+    return "undefined";
+}
+
+bool Nix::__bool__() const {
+    return false;
+}
+
+std::string Nix::__name__() const {
+    return "Nix";
+}
+
+std::shared_ptr<Nix> Nix::instance() {
+    static std::shared_ptr<Nix> inst = std::make_shared<Nix>();
+    return inst;
+}
+
+std::shared_ptr<Object> Nix::__add__(const Object&) const {
+    throw std::runtime_error("Cannot perform operations on 'undefined'");
+}
+
+std::shared_ptr<Object> Nix::__not__() const {
+    throw std::runtime_error("Cannot perform operations on 'undefined'");
+}
+
+# ```
+# 
+
+```./vm/obj/ClassObject.hpp
+#pragma once
+
+#include <string>
+#include <vector>
+#include <functional>
+#include <memory>
+#include "../core/Process.hpp"
+#include "Object.hpp"
+
+/// A ClassObject is itself callable:
+///   ClassObject(name, arity, factory)
+/// when invoked it:
+///  1) pops exactly arity args
+///  2) calls factory(args) → an initialized instance
+///  3) pushes that instance
+class ClassObject : public Object {
+public:
+    using FactoryFn = std::function<std::shared_ptr<Object>(
+        const std::vector<std::shared_ptr<Object>>& args)>;
+
+    ClassObject(std::string name, size_t arity, FactoryFn factory);
+
+    // Object protocol
+    std::string __str__()  const override { return "<class " + name_ + ">"; }
+    bool        __bool__() const override { return true;                    }
+    std::string __name__() const override { return name_;                    }
+
+    /// Invoke as a constructor
+    /// pops arity args, calls factory, pushes instance
+    bool invoke(Process& p) const;
+    std::shared_ptr<Object> getField(const std::string& name) const {
+      auto it = statics_.find(name);
+      if (it != statics_.end()) return it->second;
+      return nullptr;
+    }
+
+    void setField(const std::string& name,
+                  std::shared_ptr<Object> val) override {
+      statics_[name] = std::move(val);
+    }
+
+private:
+    std::string name_;
+    size_t      arity_;
+    FactoryFn  factory_;
+    std::unordered_map<std::string, std::shared_ptr<Object>> statics_;
+};
+
+# ```
+# 
+
+```./vm/obj/List.cpp
+#include "List.hpp"
+#include "Integer.hpp"
+#include <sstream>
+#include <stdexcept>
+
+List::List() {}
+
+std::string List::__str__() const {
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < items.size(); ++i) {
+        oss << items[i]->__str__();
+        if (i + 1 < items.size()) oss << ", ";
+    }
+    oss << "]";
+    return oss.str();
+}
+
+std::string List::__name__() const {
+    return "List";
+}
+
+bool List::__bool__() const {
+    return !items.empty();
+}
+
+int64_t List::__int__() const {
+    return static_cast<int64_t>(items.size());
+}
+
+double List::__double__() const {
+    return static_cast<double>(items.size());
+}
+
+std::shared_ptr<Object> List::get_at(const std::shared_ptr<Object>& index) const {
+    auto i = std::dynamic_pointer_cast<Integer>(index);
+    if (!i) throw std::runtime_error("List index must be an Integer");
+    if (i->value < 0 || static_cast<size_t>(i->value) >= items.size())
+        throw std::out_of_range("List index out of range: " + std::to_string(i->value));
+    return items[i->value];
+}
+
+void List::set_at(const std::shared_ptr<Object>& index, const std::shared_ptr<Object>& value) {
+    auto i = std::dynamic_pointer_cast<Integer>(index);
+    if (!i) throw std::runtime_error("List index must be an Integer");
+    if (i->value < 0 || static_cast<size_t>(i->value) >= items.size())
+        throw std::out_of_range("List index out of range: " + std::to_string(i->value));
+    items[i->value] = value;
+}
+
+void List::insert(const std::shared_ptr<Object>& index, const std::shared_ptr<Object>& value) {
+    auto i = std::dynamic_pointer_cast<Integer>(index);
+    if (!i) throw std::runtime_error("List index must be an Integer");
+    if (i->value < 0 || static_cast<size_t>(i->value) > items.size())
+        throw std::out_of_range("List index out of range: " + std::to_string(i->value));
+    items.insert(items.begin() + i->value, value);
+}
+
+void List::remove(const std::shared_ptr<Object>& value) {
+    for (auto it = items.begin(); it != items.end(); ++it) {
+        if ((*it)->__eq__(*value)->__bool__()) {
+            items.erase(it);
+            return;
+        }
+    }
+    throw std::runtime_error("Value not found in list");
+}
+
+size_t List::size() const {
+    return items.size();
 }
 
 # ```
@@ -2608,9 +3100,62 @@ public:
 # ```
 # 
 
+```./vm/obj/InstanceObject.hpp
+#pragma once
+
+#include "Object.hpp"
+#include "ClassObject.hpp"
+#include <unordered_map>
+#include <memory>
+#include <string>
+
+class InstanceObject : public Object {
+public:
+  explicit InstanceObject(std::shared_ptr<ClassObject> cls)
+    : cls_(std::move(cls)) {}
+
+  // --- fields ---
+  std::shared_ptr<Object> getField(const std::string& name) const {
+    // 1) instance‐level field?
+    auto it = fields_.find(name);
+    if (it != fields_.end()) return it->second;
+    // 2) else fall back to "static" class‐property
+    return cls_->getField(name);
+  }
+
+  void setField(const std::string& name,
+                std::shared_ptr<Object> value) override {
+    fields_[name] = std::move(value);
+  }
+
+  // --- methods defer to class ---
+  bool hasMethod(const std::string& name) const {
+    return cls_->hasMethod(name);
+  }
+  std::shared_ptr<Object> getMethod(const std::string& name) const {
+    return cls_->getMethod(name);
+  }
+
+  // pick a string rep
+  std::string __str__() const override {
+    return "<" + cls_->__name__() + " instance>";
+  }
+  std::string __name__() const override {
+    return cls_->__name__();
+  }
+
+private:
+  std::shared_ptr<ClassObject>                    cls_;
+  std::unordered_map<std::string,
+                     std::shared_ptr<Object>>    fields_;
+};
+
+# ```
+# 
+
 ```./vm/obj/Integer.cpp
 #include "Integer.hpp"
-#include "Decimal.hpp"
+#include "Float.hpp"
 #include "Boolean.hpp"
 #include "String.hpp"
 #include <memory>
@@ -2633,8 +3178,8 @@ std::shared_ptr<Object> Integer::__add__(const Object& o) const {
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
         return std::make_shared<Integer>(value + p->value);
     }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
-        return std::make_shared<Decimal>(static_cast<double>(value) + p->value);
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
+        return std::make_shared<Float>(static_cast<double>(value) + p->value);
     }
     if (const auto* p = dynamic_cast<const String*>(&o)) {
         return std::make_shared<String>(__str__() + p->value);
@@ -2646,8 +3191,8 @@ std::shared_ptr<Object> Integer::__sub__(const Object& o) const {
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
         return std::make_shared<Integer>(value - p->value);
     }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
-        return std::make_shared<Decimal>(static_cast<double>(value) - p->value);
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
+        return std::make_shared<Float>(static_cast<double>(value) - p->value);
     }
     throw std::runtime_error("TypeError: integer - " + o.__name__());
 }
@@ -2656,8 +3201,8 @@ std::shared_ptr<Object> Integer::__mul__(const Object& o) const {
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
         return std::make_shared<Integer>(value * p->value);
     }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
-        return std::make_shared<Decimal>(static_cast<double>(value) * p->value);
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
+        return std::make_shared<Float>(static_cast<double>(value) * p->value);
     }
     throw std::runtime_error("TypeError: integer * " + o.__name__());
 }
@@ -2667,9 +3212,9 @@ std::shared_ptr<Object> Integer::__div__(const Object& o) const {
         if (p->value == 0) throw std::runtime_error("ZeroDivisionError: integer / integer");
         return std::make_shared<Integer>(value / p->value);
     }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
         if (p->value == 0.0) throw std::runtime_error("ZeroDivisionError: integer / decimal");
-        return std::make_shared<Decimal>(static_cast<double>(value) / p->value);
+        return std::make_shared<Float>(static_cast<double>(value) / p->value);
     }
     throw std::runtime_error("TypeError: integer / " + o.__name__());
 }
@@ -2686,7 +3231,7 @@ std::shared_ptr<Object> Integer::__eq__(const Object& o) const {
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
         return std::make_shared<Boolean>(value == p->value);
     }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
         return std::make_shared<Boolean>(static_cast<double>(value) == p->value);
     }
     return std::make_shared<Boolean>(false);
@@ -2696,7 +3241,7 @@ std::shared_ptr<Object> Integer::__lt__(const Object& o) const {
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
         return std::make_shared<Boolean>(value < p->value);
     }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
         return std::make_shared<Boolean>(static_cast<double>(value) < p->value);
     }
     throw std::runtime_error("TypeError: integer < " + o.__name__());
@@ -2706,7 +3251,7 @@ std::shared_ptr<Object> Integer::__gt__(const Object& o) const {
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
         return std::make_shared<Boolean>(value > p->value);
     }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
         return std::make_shared<Boolean>(static_cast<double>(value) > p->value);
     }
     throw std::runtime_error("TypeError: integer > " + o.__name__());
@@ -2716,7 +3261,7 @@ std::shared_ptr<Object> Integer::__le__(const Object& o) const {
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
         return std::make_shared<Boolean>(value <= p->value);
     }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
         return std::make_shared<Boolean>(static_cast<double>(value) <= p->value);
     }
     throw std::runtime_error("TypeError: integer <= " + o.__name__());
@@ -2726,7 +3271,7 @@ std::shared_ptr<Object> Integer::__ge__(const Object& o) const {
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
         return std::make_shared<Boolean>(value >= p->value);
     }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
         return std::make_shared<Boolean>(static_cast<double>(value) >= p->value);
     }
     throw std::runtime_error("TypeError: integer >= " + o.__name__());
@@ -2782,33 +3327,47 @@ std::shared_ptr<Object> Boolean::__not__() const {
 # ```
 # 
 
-```./vm/obj/Decimal.hpp
+```./vm/obj/NaN.hpp
 #pragma once
-#include "Scalar.hpp"
+#include "Object.hpp"
 
-class Decimal : public Scalar {
+class NaN : public Object {
 public:
-    double value;
-    Decimal(double v);
-
     std::string __str__() const override;
     bool __bool__() const override;
+    double __double__() const override;
+    int64_t __int__() const override;
     std::string __name__() const override;
 
-    std::shared_ptr<Object> __add__(const Object& o) const override;
-    std::shared_ptr<Object> __sub__(const Object& o) const override;
-    std::shared_ptr<Object> __mul__(const Object& o) const override;
-    std::shared_ptr<Object> __div__(const Object& o) const override;
-
-    std::shared_ptr<Object> __eq__ (const Object& o) const override;
-    std::shared_ptr<Object> __lt__ (const Object& o) const override;
-    std::shared_ptr<Object> __gt__ (const Object& o) const override;
-    std::shared_ptr<Object> __le__ (const Object& o) const override;
-    std::shared_ptr<Object> __ge__ (const Object& o) const override;
-    std::shared_ptr<Object> __and__(const Object& o) const override;
-    std::shared_ptr<Object> __or__ (const Object& o) const override;
-    std::shared_ptr<Object> __not__() const override;
+    static std::shared_ptr<NaN> instance();
 };
+
+# ```
+# 
+
+```./vm/obj/BuiltinFn.cpp
+#include "BuiltinFn.hpp"
+
+BuiltinFn::BuiltinFn(FnType fn, std::string name)
+    : fn_(std::move(fn)), name_(std::move(name))
+{}
+
+std::string BuiltinFn::__str__() const {
+    return "<builtin function " + name_ + ">";
+}
+
+bool BuiltinFn::__bool__() const {
+    return true;
+}
+
+std::string BuiltinFn::__name__() const {
+    return name_;
+}
+
+bool BuiltinFn::invoke(Process& p) const {
+    // Delegate to the stored C++ function
+    return fn_(p);
+}
 
 # ```
 # 
@@ -2830,15 +3389,48 @@ bool RegEx::has_flag(char flag) const {
 # ```
 # 
 
+```./vm/obj/FunctionObject.hpp
+#pragma once
+
+#include <string>
+#include <memory>
+#include "../core/Process.hpp"
+#include "Object.hpp"
+
+class FunctionObject : public Object {
+public:
+    // Free function constructor
+    FunctionObject(std::string label, size_t arity);
+
+    // Bound method constructor (captures a receiver)
+    FunctionObject(std::string label, size_t arity, std::shared_ptr<Object> receiver);
+
+    // Object protocol
+    std::string __str__()   const override;
+    bool        __bool__()  const override;
+    std::string __name__()  const override;
+
+    // Actually invoke this function in the VM
+    bool invoke(Process& p) const;
+
+private:
+    std::string                 label_;     // label to jump to
+    size_t                      arity_;     // how many args to pop
+    std::shared_ptr<Object>     receiver_;  // if non-null, bind as "this"
+};
+
+# ```
+# 
+
 ```./vm/core/Memory.cpp
 #include "Memory.hpp"
 #include "string"
-#include "../obj/Undefined.hpp"
+#include "../obj/Nix.hpp"
 
 void Memory::declare(const std::string& n) {
     if (mem.find(n) != mem.end())
         throw std::runtime_error("Already declared: " + n);
-    mem[n] = std::make_shared<Undefined>();
+    mem[n] = std::make_shared<Nix>();
 }
 void Memory::set(const std::string& n, const std::shared_ptr<Object>& v) {
     mem[n] = v;
@@ -2906,6 +3498,9 @@ std::string Bytecode::toString() {
 #include "Bytecode.hpp"
 #include "../exec/exec.hpp"
 #include "../helpers/exec_step.hpp"
+#include "../obj/ClassObject.hpp"
+#include "../obj/Integer.hpp"
+#include "../obj/Float.hpp"
 
 void Process::execute() {
     // Collect all labels
@@ -2934,6 +3529,31 @@ void Process::execute() {
     while (!completed && !broken) {
         exec_step(*this);
     }
+}
+
+void Process::register_globals() {
+    // Integer(...)
+    global_memory.declare("Integer");
+    global_memory.set("Integer",
+      std::make_shared<ClassObject>(
+        "Integer", /*arity=*/1,
+        [](auto const& args) {
+          // mimic Python’s int(obj): use the Object’s __int__()
+          return std::make_shared<Integer>( args[0]->__int__() );
+        }
+      )
+    );
+
+    // Float(...)
+    global_memory.declare("Float");
+    global_memory.set("Float",
+      std::make_shared<ClassObject>(
+        "Float", /*arity=*/1,
+        [](auto const& args) {
+          return std::make_shared<Float>( args[0]->__double__() );
+        }
+      )
+    );
 }
 
 void Process::err(const std::string& message, const int& code) {
@@ -3007,7 +3627,7 @@ void OperandStack::push(const std::shared_ptr<Object>& v) {
     nodes.push_back(v);
 }
 std::shared_ptr<Object> OperandStack::pop() {
-    if (nodes.empty()) throw std::runtime_error("OperandStack underflow");
+    if (nodes.empty()) throw std::runtime_error("OperandStack underflow in OperandStack::pop()");
     auto v = nodes.back();
     nodes.pop_back();
     return v;
@@ -3073,7 +3693,10 @@ enum Opcode {
     OP_WRITE, OP_FLUSH, OP_DUMP,
     OP_IN, OP_FREAD, OP_FWRITE, OP_EXIT,
     OP_RAND, OP_TIME, OP_SLEEP, OP_CAST,
-    OP_TYPE, NOP, OP_CONST_PI, OP_CONST_E,
+    OP_TYPE, NOP, OP_ACCESS,
+
+    OP_LIST_NEW, OP_LIST_INS, OP_LIST_SET,
+    OP_LIST_GET, OP_LIST_LEN
 };
 
 # ```
@@ -3237,7 +3860,10 @@ const std::unordered_map<std::string, Opcode> opmap = {
     {"END", OP_END}, {"WRITE", OP_WRITE}, {"FLUSH", OP_FLUSH}, {"DUMP", OP_DUMP},
     {"IN", OP_IN}, {"FREAD", OP_FREAD}, {"FWRITE", OP_FWRITE}, {"EXIT", OP_EXIT},
     {"RAND", OP_RAND}, {"TIME", OP_TIME}, {"SLEEP", OP_SLEEP}, {"NOP", NOP},
-    {"TYPE", OP_TYPE}, {"CAST", OP_CAST}, {"LABEL", OP_LABEL}
+    {"TYPE", OP_TYPE}, {"CAST", OP_CAST}, {"LABEL", OP_LABEL},
+    {"LIST_NEW", OP_LIST_NEW}, {"LIST_INS", OP_LIST_INS},
+    {"LIST_GET", OP_LIST_GET}, {"LIST_SET", OP_LIST_SET}, {"LIST_LEN", OP_LIST_LEN},
+    {"ACCESS", OP_ACCESS}
 };
 
 
@@ -3315,6 +3941,8 @@ struct Process {
     Process(std::vector<Bytecode> m) : module(std::move(m)) {
         env_stack.push_scope();      // ← global-scope frame
     };
+
+    void register_globals();
 
     /**
      * Begins the process
@@ -3428,6 +4056,7 @@ bool exec::RET(Process& p) {
 ```./vm/exec/CAST.hpp
 #pragma once
 #include "exec.hpp"
+#include "../obj/ClassObject.hpp"
 bool exec::CAST(Process& p);
 
 # ```
@@ -3452,6 +4081,17 @@ bool exec::JNZ(Process& p);
 # ```
 # 
 
+```./vm/exec/ACCESS.hpp
+#pragma once
+#include "./exec.hpp"
+#include "./../obj/String.hpp"
+#include "./../obj/Object.hpp"
+
+bool exec::ACCESS(Process& p);
+
+# ```
+# 
+
 ```./vm/exec/BINARY_OP.hpp
 #pragma once
 #include "../core/Process.hpp"
@@ -3472,10 +4112,55 @@ namespace exec {
 # ```
 # 
 
+```./vm/exec/LIST_NEW.hpp
+#pragma once
+#include "../obj/List.hpp"
+#include "exec.hpp"
+
+bool exec::LIST_NEW(Process& p);
+
+# ```
+# 
+
 ```./vm/exec/GET.hpp
 #pragma once
 #include "exec.hpp"
 bool exec::GET(Process& p);
+
+# ```
+# 
+
+```./vm/exec/LIST_SET.hpp
+#pragma once
+#include "../obj/List.hpp"
+#include "../obj/Integer.hpp"
+#include "exec.hpp"
+
+bool exec::LIST_SET(Process& p);
+
+# ```
+# 
+
+```./vm/exec/LIST_INS.hpp
+#pragma once
+#include "../obj/List.hpp"
+#include "../obj/Integer.hpp"
+#include "exec.hpp"
+
+bool exec::LIST_INS(Process& p);
+
+# ```
+# 
+
+```./vm/exec/LIST_LEN.cpp
+#include "LIST_LEN.hpp"
+
+bool exec::LIST_LEN(Process& p) {
+    auto list = p.stack.pop();
+    auto list_obj = std::dynamic_pointer_cast<List>(list);
+    p.stack.push(std::make_shared<Integer>(list_obj->size()));
+    return true;
+}
 
 # ```
 # 
@@ -3549,6 +4234,16 @@ bool exec::LABEL(Process& p);
 # ```
 # 
 
+```./vm/exec/SETFIELD.hpp
+#pragma once
+#include "exec.hpp"
+#include "../obj/String.hpp"
+
+bool exec::SETFIELD(Process& p);
+
+# ```
+# 
+
 ```./vm/exec/RAND.hpp
 #pragma once
 #include "exec.hpp"
@@ -3606,6 +4301,19 @@ bool exec::SET(Process& p) {
 # ```
 # 
 
+```./vm/exec/LIST_GET.cpp
+#include "LIST_GET.hpp"
+
+bool exec::LIST_GET(Process& p) {
+    auto index = std::dynamic_pointer_cast<Integer>(p.stack.pop());
+    auto list = std::dynamic_pointer_cast<List>(p.stack.pop());
+    p.stack.push(list->get_at(index));
+    return true;
+}
+
+# ```
+# 
+
 ```./vm/exec/EXIT.cpp
 #include "EXIT.hpp"
 #include "exec.hpp"
@@ -3621,28 +4329,34 @@ bool exec::EXIT(Process& p)  {
 #include <string>
 #include "CALL.hpp"
 #include "exec.hpp"
-bool exec::CALL(Process& p)  {
-    p.env_stack.push_scope();
+bool exec::CALL(Process& p) {
     const auto& b = p.module[p.pc];
+    // Peek at what’s on the stack
+    auto maybeFn = p.stack.pop();
+    if (auto fnObj = std::dynamic_pointer_cast<FunctionObject>(maybeFn)) {
+        // Let the function object handle binding new scope, args, etc.
+        fnObj->invoke(p);
+        return true;
+    }
 
-    // ensure a label is passed
     if (b.operand.size() != 1) {
-        p.err("Recieved a bytecode: (CALL) but expected exactly two nodes: (CALL, .<label_name>)");
+        p.err("CALL expects 1 operand, got " + std::to_string(b.operand.size()));
         return false;
     }
-
-    // extract label name
-    const std::string& nm = b.operand.at(0); // label name
-
-    // ensure is valid label name
+    const auto& nm = b.operand[0];
     if (!p.labels.exists(nm)) {
-        p.err("Unknown function label in (CALL): '" + nm + "'");
+        p.err("Unknown label in CALL: '" + nm + "'");
         return false;
     }
-    p.pc = p.labels.get(nm);
 
+    // 1) push a new local scope
+    p.env_stack.push_scope();
+
+    // 2) save return address (next instruction)
     p.callstack.push(p.pc + 1);
-    p.pc = p.labels.get(nm.substr(1));
+
+    // 3) jump into the function
+    p.pc = p.labels.get(nm);
     return true;
 }
 
@@ -3711,12 +4425,13 @@ bool exec::FLUSH(Process& p) {
 #include "exec.hpp"
 bool exec::JZ(Process& p) {
     auto cond = p.stack.pop();
-    const auto& b = p.module[p.pc];
-    std::string nm = b.operand.at(0);
-    if (cond->__bool__()) {
-        if (nm.size() >= 2 && nm[0]=='.' && p.labels.exists(nm.substr(1)))
-            p.pc = p.labels.get(nm.substr(1));
-        else return false;
+    const auto& nm = p.module[p.pc].operand.at(0);
+    if (!cond->__bool__()) {
+        if (!p.labels.exists(nm)) {
+            p.err("Unknown label in JZ: '" + nm + "'");
+            return false;
+        }
+        p.pc = p.labels.get(nm);
     }
     return true;
 }
@@ -3789,13 +4504,13 @@ bool exec::LABEL(Process& p) {
 
 ```./vm/exec/RAND.cpp
 #include <random>
-#include "../obj/Decimal.hpp"
+#include "../obj/Float.hpp"
 #include "RAND.hpp"
 #include "exec.hpp"
 bool exec::RAND(Process& p) {
     static std::mt19937 rng{std::random_device{}()};
     std::uniform_real_distribution<double> dist(0.0,1.0);
-    p.stack.push(std::make_shared<Decimal>(dist(rng)));
+    p.stack.push(std::make_shared<Float>(dist(rng)));
     return true;
 }
 
@@ -3810,10 +4525,43 @@ bool exec::SWAP(Process& p);
 # ```
 # 
 
+```./vm/exec/SETFIELD.cpp
+#include "SETFIELD.hpp"
+
+bool exec::SETFIELD(Process& p) {
+  // pop the new value
+  auto val = p.stack.pop();
+  // pop the key string
+  auto keyObj = p.stack.pop();
+  auto keyStr = std::dynamic_pointer_cast<String>(keyObj);
+  if (!keyStr) throw std::runtime_error("SETFIELD: expected string key");
+
+  // pop the receiver
+  auto receiver = p.stack.pop();
+
+  // store it
+  receiver->setField(keyStr->value, val);
+  return true;
+}
+
+# ```
+# 
+
 ```./vm/exec/SET.hpp
 #pragma once
 #include "exec.hpp"
 bool exec::SET(Process& p);
+
+# ```
+# 
+
+```./vm/exec/LIST_GET.hpp
+#pragma once
+#include "../obj/List.hpp"
+#include "../obj/Integer.hpp"
+#include "exec.hpp"
+
+bool exec::LIST_GET(Process& p);
 
 # ```
 # 
@@ -3829,6 +4577,7 @@ bool exec::EXIT(Process& p);
 ```./vm/exec/CALL.hpp
 #pragma once
 #include "exec.hpp"
+#include "../obj/FunctionObject.hpp"
 bool exec::CALL(Process& p);
 
 # ```
@@ -3907,6 +4656,13 @@ namespace exec {
     bool CALL(Process&);
     bool RAND(Process&);
     bool TIME(Process&);
+    bool LIST_NEW(Process&);
+    bool LIST_GET(Process&);
+    bool LIST_SET(Process&);
+    bool LIST_LEN(Process&);
+    bool LIST_INS(Process&);
+    bool ACCESS(Process&);
+    bool SETFIELD(Process&);
 }
 
 # ```
@@ -3947,6 +4703,21 @@ bool exec::WRITE(Process& p);
 ```./vm/exec/CAST.cpp
 #include "CAST.hpp"
 bool exec::CAST(Process &p) {
+    // 1) Which type?  (e.g. "Integer")
+    auto typeName = p.module[p.pc].operand.at(0);
+
+    // 2) Pop the value to convert
+    auto val = p.stack.pop();
+
+    // 3) Fetch the ClassObject from global memory
+    auto clsObj = p.global_memory.get(typeName);
+    auto co     = std::dynamic_pointer_cast<ClassObject>(clsObj);
+    if (!co) throw std::runtime_error("CAST: unknown type " + typeName);
+
+    // 4) Push the argument back and invoke the “constructor”
+    p.stack.push(val);
+    co->invoke(p);
+
     return true;
 }
 
@@ -3965,15 +4736,19 @@ bool exec::RET(Process& p);
 #include <string>
 #include "JNZ.hpp"
 #include "exec.hpp"
+
 bool exec::JNZ(Process& p) {
     auto cond = p.stack.pop();
-    const auto& b = p.module[p.pc];
-    std::string nm = b.operand.at(0);
+    const auto& nm = p.module[p.pc].operand.at(0);
+
     if (!cond->__bool__()) {
-        if (nm.size() >= 2 && nm[0]=='.' && p.labels.exists(nm.substr(1)))
-            p.pc = p.labels.get(nm.substr(1));
-        else return false;
+        if (!p.labels.exists(nm)) {
+            p.err("Unknown label in JNZ: '" + nm + "'");
+            return false;
+        }
+        p.pc = p.labels.get(nm);
     }
+
     return true;
 }
 
@@ -4010,6 +4785,54 @@ BINARY_OP(AND,    __and__)
 # ```
 # 
 
+```./vm/exec/ACCESS.cpp
+#include "ACCESS.hpp"
+#include "../obj/String.hpp"
+#include <stdexcept>
+#include <memory>
+
+bool exec::ACCESS(Process& p) {
+    // 1) pop the property name (must be a String)
+    auto keyObj = p.stack.pop();
+    auto keyStr = std::dynamic_pointer_cast<String>(keyObj);
+    if (!keyStr) {
+        throw std::runtime_error("ACCESS: expected string as property name");
+    }
+    std::string key = keyStr->value;
+
+    // 2) pop the target object
+    auto target = p.stack.pop();
+
+    // 3) method lookup: if the object has a method by this name, bind it
+    if (target->hasMethod(key)) {
+        auto method = target->getMethod(key);
+        p.stack.push(method);
+        return true;
+    }
+
+    // 4) field lookup: fall back to a plain field
+    auto field = target->getField(key);
+    if (!field) {
+        throw std::runtime_error("ACCESS: field '" + key + "' not found");
+    }
+    p.stack.push(field);
+    return true;
+}
+
+# ```
+# 
+
+```./vm/exec/LIST_NEW.cpp
+#include "LIST_NEW.hpp"
+
+bool exec::LIST_NEW(Process& p) {
+    p.stack.push(std::make_shared<List>());
+    return true;
+}
+
+# ```
+# 
+
 ```./vm/exec/GET.cpp
 #include "GET.hpp"
 #include "../helpers/parse_literal.hpp"
@@ -4038,6 +4861,55 @@ bool exec::GET(Process& p) {
     p.stack.push(val);
     return true;
 }
+
+# ```
+# 
+
+```./vm/exec/LIST_SET.cpp
+#include "LIST_SET.hpp"
+
+bool exec::LIST_SET(Process& p) {
+    auto value = p.stack.pop();
+    auto index = std::dynamic_pointer_cast<Integer>(p.stack.pop());
+    auto list = std::dynamic_pointer_cast<List>(p.stack.pop());
+    list->set_at(index, value);
+    return true;
+}
+
+# ```
+# 
+
+```./vm/exec/LIST_INS.cpp
+#include <iostream>
+#include "LIST_INS.hpp"
+
+bool exec::LIST_INS(Process& p) {
+    auto index_obj = p.stack.pop();
+    auto value = p.stack.pop();
+    auto list_obj = p.stack.pop();
+
+    auto index = std::dynamic_pointer_cast<Integer>(index_obj);
+    auto list = std::dynamic_pointer_cast<List>(list_obj);
+
+    if (!index) throw std::runtime_error("LIST_INS: index is not an Integer");
+    if (!list)  throw std::runtime_error("LIST_INS: object is not a List");
+
+    list->insert(index, value);
+    p.stack.push(list);
+
+    return true;
+}
+
+# ```
+# 
+
+```./vm/exec/LIST_LEN.hpp
+#pragma once
+#include "../obj/List.hpp"
+#include "../obj/Integer.hpp"
+#include "exec.hpp"
+
+bool exec::LIST_LEN(Process& p);
 
 # ```
 # 
@@ -4135,11 +5007,13 @@ bool exec::TIME(Process& p) {
 #include <stdexcept>
 #include <memory>
 #include "../obj/Object.hpp"
+#include "../obj/Nil.hpp"
+#include "../obj/Nix.hpp"
+#include "../obj/NaN.hpp"
 #include "../obj/Boolean.hpp"
 #include "../obj/String.hpp"
 #include "../obj/Integer.hpp"
-#include "../obj/Decimal.hpp"
-#include "../obj/Scientific.hpp"
+#include "../obj/Float.hpp"
 #include "../obj/RegEx.hpp"
 #include "../helpers/str_decode.hpp"
 
@@ -4240,6 +5114,9 @@ std::string unordered_map_to_string(const std::unordered_map<K, V>& umap) {
 #include "../core/opmap.hpp"
 #include "../core/Bytecode.hpp"
 #include "../exec/exec.hpp"
+#include "../obj/BuiltinFn.hpp"
+#include "../obj/FunctionObject.hpp"
+#include "../obj/ClassObject.hpp"
 
 void exec_step(Process& p) {
     Bytecode& instr = p.module.at(p.pc);
@@ -4247,45 +5124,84 @@ void exec_step(Process& p) {
     size_t before = p.pc;
     // std::cout << "Executing process id: '" << std::setw(5) << std::setfill('0') << p.pc << "'; bytecode: '" + instr.toString() + "'" << std::endl;
     switch (instr.opcode) {
-        case OP_PUSH:  ok = exec::PUSH  (p);    break;
-        case OP_POP:   ok = exec::POP   (p);    break;
-        case OP_DUP:   ok = exec::DUP   (p);    break;
-        case OP_DECL:  ok = exec::DECL  (p);    break;
-        case OP_SWAP:  ok = exec::SWAP  (p);    break;
-        case OP_SET:   ok = exec::SET   (p);    break;
-        case OP_GET:   ok = exec::GET   (p);    break;
-        case OP_DEL:   ok = exec::DEL   (p);    break;
-        case OP_WRITE: ok = exec::WRITE (p);    break;
-        case OP_FLUSH: ok = exec::FLUSH (p);    break;
-        case OP_DUMP:  ok = exec::DUMP  (p);    break;
-        case OP_ADD:   ok = exec::ADD   (p);    break;
-        case OP_SUB:   ok = exec::SUB   (p);    break;
-        case OP_MUL:   ok = exec::MUL   (p);    break;
-        case OP_DIV:   ok = exec::DIV   (p);    break;
-        case OP_MOD:   ok = exec::MOD   (p);    break;
-        case OP_EQ:    ok = exec::EQ    (p);    break;
-        case OP_GT:    ok = exec::GT    (p);    break;
-        case OP_LT:    ok = exec::LT    (p);    break;
-        case OP_AND:   ok = exec::AND   (p);    break;
-        case OP_OR:    ok = exec::OR    (p);    break;
-        case OP_NOT:   ok = exec::NOT   (p);    break;
-        case OP_JMP:   ok = exec::JMP   (p);    break;
-        case OP_JNZ:   ok = exec::JNZ   (p);    break;
-        case OP_JZ:    ok = exec::JZ    (p);    break;
-        case OP_EXIT:  ok = exec::EXIT  (p);    break;
-        case OP_RET:   ok = exec::RET   (p);    break;
-        case OP_CALL:  ok = exec::CALL  (p);    break;
-        case OP_RAND:  ok = exec::RAND  (p);    break;
-        case OP_TIME:  ok = exec::TIME  (p);    break;
-        case NOP:                               break;
-        case OP_LABEL: ok = true;               break;
-        case OP_TYPE:  ok = exec::TYPE  (p);    break;
-        case OP_CAST:  ok = exec::CAST  (p);    break;
-        case OP_IN:
-        case OP_SLEEP:
-        case OP_FREAD:
-        case OP_FWRITE:
-        case OP_END:                            break;
+        case OP_PUSH:       ok = exec::PUSH  (p);    break;
+        case OP_POP:        ok = exec::POP   (p);    break;
+        case OP_DUP:        ok = exec::DUP   (p);    break;
+        case OP_DECL:       ok = exec::DECL  (p);    break;
+        case OP_SWAP:       ok = exec::SWAP  (p);    break;
+        case OP_SET:        ok = exec::SET   (p);    break;
+        case OP_GET:        ok = exec::GET   (p);    break;
+        case OP_DEL:        ok = exec::DEL   (p);    break;
+        case OP_WRITE:      ok = exec::WRITE (p);    break;
+        case OP_FLUSH:      ok = exec::FLUSH (p);    break;
+        case OP_DUMP:       ok = exec::DUMP  (p);    break;
+        case OP_ADD:        ok = exec::ADD   (p);    break;
+        case OP_SUB:        ok = exec::SUB   (p);    break;
+        case OP_MUL:        ok = exec::MUL   (p);    break;
+        case OP_DIV:        ok = exec::DIV   (p);    break;
+        case OP_MOD:        ok = exec::MOD   (p);    break;
+        case OP_EQ:         ok = exec::EQ    (p);    break;
+        case OP_GT:         ok = exec::GT    (p);    break;
+        case OP_LT:         ok = exec::LT    (p);    break;
+        case OP_AND:        ok = exec::AND   (p);    break;
+        case OP_OR:         ok = exec::OR    (p);    break;
+        case OP_NOT:        ok = exec::NOT   (p);    break;
+        case OP_JMP:        ok = exec::JMP   (p);    break;
+        case OP_JNZ:        ok = exec::JNZ   (p);    break;
+        case OP_JZ:         ok = exec::JZ    (p);    break;
+        case OP_EXIT:       ok = exec::EXIT  (p);    break;
+        case OP_RET:        ok = exec::RET   (p);    break;
+        case OP_CALL: {
+            // If the CALL bytecode has an operand, it's the old label-jump convention:
+            if (!instr.operand.empty()) {
+                ok = exec::CALL(p);
+            }
+
+            else {
+                // Dynamic call: the top of the stack must be a callable object
+                auto candidate = p.stack.back();
+
+                // Try BuiltinFn
+                if (auto bf = std::dynamic_pointer_cast<BuiltinFn>(candidate)) {
+                    p.stack.pop();
+                    ok = bf->invoke(p);
+                }
+                // Try user-defined FunctionObject
+                else if (auto fo = std::dynamic_pointer_cast<FunctionObject>(candidate)) {
+                    p.stack.pop();
+                    ok = fo->invoke(p);
+                }
+                // Try ClassObject (constructor)
+                else if (auto co = std::dynamic_pointer_cast<ClassObject>(candidate)) {
+                    p.stack.pop();
+                    ok = co->invoke(p);
+                }
+                else {
+                    throw std::runtime_error(
+                        "OP_CALL: top of stack is not callable (got "
+                        + candidate->__name__() + ")"
+                    );
+                }
+            }
+            break;
+        }
+        case OP_RAND:       ok = exec::RAND  (p);    break;
+        case OP_TIME:       ok = exec::TIME  (p);    break;
+        case NOP:                                    break;
+        case OP_LABEL:      ok = true;               break;
+        case OP_TYPE:       ok = exec::TYPE  (p);    break;
+        case OP_CAST:       ok = exec::CAST  (p);    break;
+        case OP_IN:                                  break;
+        case OP_SLEEP:                               break;
+        case OP_FREAD:                               break;
+        case OP_FWRITE:                              break;
+        case OP_LIST_GET:   ok = exec::LIST_GET(p);  break;
+        case OP_LIST_SET:   ok = exec::LIST_SET(p);  break;
+        case OP_LIST_LEN:   ok = exec::LIST_LEN(p);  break;
+        case OP_LIST_NEW:   ok = exec::LIST_NEW(p);  break;
+        case OP_LIST_INS:   ok = exec::LIST_INS(p);  break;
+        case OP_ACCESS:     ok = exec::ACCESS  (p);  break;
+        case OP_END:        ok = true;               break;
         default:
             throw std::runtime_error("Opcode not implemented");
     }
@@ -4481,6 +5397,12 @@ std::shared_ptr<Object> parse_literal(const std::string& tok) {
     if (tok == "true")  return std::make_shared<Boolean>(true);
     if (tok == "false") return std::make_shared<Boolean>(false);
 
+    // --- Indefinites ---
+    if (tok == "nil") return Nil::instance();
+    if (tok == "nix") return Nix::instance();
+    if (tok == "nan") return NaN::instance();
+
+
     // --- Regular Expression Literals ---
     if (tok.size() >= 4 && tok[0] == 'r' && tok[1] == '/' && tok.find('/', 2) != std::string::npos) {
         auto lastSlash = tok.rfind('/');
@@ -4525,13 +5447,9 @@ std::shared_ptr<Object> parse_literal(const std::string& tok) {
         }
 
         try {
-            if (hasExp) {
-                double v = std::stod(tok);
-                return std::make_shared<Scientific>(v);
-            }
             if (hasDot) {
                 double v = std::stod(tok);
-                return std::make_shared<Decimal>(v);
+                return std::make_shared<Float>(v);
             }
             int64_t v = std::stoll(tok);
             return std::make_shared<Integer>(v);

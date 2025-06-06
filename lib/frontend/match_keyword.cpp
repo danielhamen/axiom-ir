@@ -24,7 +24,9 @@ std::optional<Keyword> match_keyword(const std::string& word) {
     if (word == "default")      return KW_DEFAULT;
     if (word == "true")         return KW_TRUE;
     if (word == "false")        return KW_FALSE;
-    if (word == "null")         return KW_NULL;
+    if (word == "nil")          return KW_NIL;
+    if (word == "nix")          return KW_NIX;
+    if (word == "nan")          return KW_NAN;
     if (word == "namespace")    return KW_NAMESPACE;
     return std::nullopt;
 }

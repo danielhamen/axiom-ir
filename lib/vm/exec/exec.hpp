@@ -36,4 +36,11 @@ namespace exec {
     bool CALL(Process&);
     bool RAND(Process&);
     bool TIME(Process&);
+    bool LIST_NEW(Process&);
+    bool LIST_GET(Process&);
+    bool LIST_SET(Process&);
+    bool LIST_LEN(Process&);
+    bool LIST_INS(Process&);
+    bool ACCESS(Process&);
+    bool SETFIELD(Process&);
 }

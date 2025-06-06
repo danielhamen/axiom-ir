@@ -95,6 +95,14 @@ std::vector<Bytecode> Emitter::emit_function_stmt(const std::shared_ptr<Function
     // // --- Function body label ---
     // code.push_back({ OP_LABEL, { ref_name } });
 
+    // Emit function arguments
+    for (auto p : funcStmt->params) {
+        auto param = std::dynamic_pointer_cast<Variable>(p.first);
+        auto type = std::dynamic_pointer_cast<Variable>(p.second);
+        code.push_back({ OP_DECL, { "$" + param->name } });
+        code.push_back({ OP_TYPE, { "$" + param->name, type->name } });
+    }
+
     // Emit function body
     for (auto stmt : funcStmt->body) {
         auto stmt_code = emit_node(stmt);
@@ -116,6 +124,8 @@ std::vector<Bytecode> Emitter::emit_return(const std::shared_ptr<ReturnStmt>& re
         auto value_code = emit_node(value);
         code.insert(code.end(), value_code.begin(), value_code.end());
     }
+
+    code.push_back({ OP_RET, {} });
 
     return code;
 }
@@ -148,50 +158,98 @@ std::string resolve_field_access(const std::shared_ptr<ASTNode>& node) {
     }
 }
 
-std::vector<Bytecode> Emitter::emit_call_expr(const std::shared_ptr<CallExpr>& callExpr) {
+
+// std::vector<Bytecode> Emitter::emit_call_expr(const std::shared_ptr<CallExpr>& callExpr) {
+//     std::vector<Bytecode> code;
+
+//     auto callee = resolve_field_access(callExpr->callee);
+
+//     // Push arguments RIGHT to LEFT
+//     for (int i = callExpr->arguments.size() - 1; i >= 0; i--) {
+//         auto b = emit_node(callExpr->arguments[i]);
+//         code.insert(code.end(), b.begin(), b.end());
+//     }
+
+//     code.push_back({ OP_CALL, { callee } });
+//     return code;
+// }
+
+
+
+// std::vector<Bytecode> Emitter::emit_field_access(const std::shared_ptr<FieldAccess>& fieldAccess) {
+//     std::vector<Bytecode> code;
+
+//     std::string full_name;
+//     std::shared_ptr<ASTNode> current = fieldAccess;
+
+//     // Collect field names in reverse order
+//     std::vector<std::string> components;
+
+//     // Walk the FieldAccess chain
+//     while (auto field = std::dynamic_pointer_cast<FieldAccess>(current)) {
+//         auto field_var = std::dynamic_pointer_cast<Variable>(field->field);
+//         if (!field_var) {
+//             throw std::runtime_error("FieldAccess::field must be Variable");
+//         }
+//         components.push_back(field_var->name);
+//         current = field->object;
+//     }
+
+//     // Add base object
+//     if (auto base = std::dynamic_pointer_cast<Variable>(current)) {
+//         components.push_back(base->name);
+//     } else {
+//         throw std::runtime_error("FieldAccess::base must be Variable");
+//     }
+
+//     // Reverse and join
+//     std::reverse(components.begin(), components.end());
+//     std::string full_access = "$" + components[0];
+//     for (size_t i = 1; i < components.size(); ++i) {
+//         full_access += "." + components[i];
+//     }
+
+//     code.push_back(Bytecode{OP_GET, {full_access}});
+//     return code;
+// }
+
+std::vector<Bytecode> Emitter::emit_call_expr(const std::shared_ptr<CallExpr>& call) {
     std::vector<Bytecode> code;
 
-    auto callee = resolve_field_access(callExpr->callee);
+    // 1) emit the callee expression just once
+    auto callee_code = emit_node(call->callee);
+    code.insert(code.end(), callee_code.begin(), callee_code.end());
 
-    code.push_back({ OP_CALL, { callee } });
+    // 2) push arguments right→left
+    for (int i = int(call->arguments.size()) - 1; i >= 0; --i) {
+        auto argCode = emit_node(call->arguments[i]);
+        code.insert(code.end(), argCode.begin(), argCode.end());
+    }
+
+    // 3) generic call opcode
+    code.push_back({ OP_CALL, {} });
     return code;
 }
 
-
-std::vector<Bytecode> Emitter::emit_field_access(const std::shared_ptr<FieldAccess>& fieldAccess) {
+std::vector<Bytecode> Emitter::emit_field_access(const std::shared_ptr<FieldAccess>& fa) {
     std::vector<Bytecode> code;
 
-    std::string full_name;
-    std::shared_ptr<ASTNode> current = fieldAccess;
+    // 1) emit receiver, once
+    auto receiver_code = emit_node(fa->object);
+    code.insert(code.end(),
+                receiver_code.begin(),
+                receiver_code.end());
 
-    // Collect field names in reverse order
-    std::vector<std::string> components;
+    // 2) turn the ASTNode field into its name
+    auto var = std::dynamic_pointer_cast<Variable>(fa->field);
+    if (!var) throw std::runtime_error("FieldAccess::field must be a Variable");
+    std::string fieldName = var->name;
 
-    // Walk the FieldAccess chain
-    while (auto field = std::dynamic_pointer_cast<FieldAccess>(current)) {
-        auto field_var = std::dynamic_pointer_cast<Variable>(field->field);
-        if (!field_var) {
-            throw std::runtime_error("FieldAccess::field must be Variable");
-        }
-        components.push_back(field_var->name);
-        current = field->object;
-    }
+    // 3) push the field name as a literal string
+    code.push_back({ OP_PUSH, { "\"" + fieldName + "\"" } });
 
-    // Add base object
-    if (auto base = std::dynamic_pointer_cast<Variable>(current)) {
-        components.push_back(base->name);
-    } else {
-        throw std::runtime_error("FieldAccess::base must be Variable");
-    }
-
-    // Reverse and join
-    std::reverse(components.begin(), components.end());
-    std::string full_access = "$" + components[0];
-    for (size_t i = 1; i < components.size(); ++i) {
-        full_access += "." + components[i];
-    }
-
-    code.push_back(Bytecode{OP_GET, {full_access}});
+    // 4) do the dynamic lookup
+    code.push_back({ OP_ACCESS, {} });
     return code;
 }
 
@@ -426,6 +484,14 @@ std::vector<Bytecode> Emitter::emit_declaration(const std::shared_ptr<Declaratio
 
         // 3b: after computing, set it into variable
         code.push_back(Bytecode{ OP_SET, { "$" + name } });
+
+        // 3c: cast to annotated type
+        if (decl->type_annotation) {
+          // push the ClassObject by name
+          code.push_back({ OP_GET, { decl->type_annotation.value() } });
+          // invoke it with 1 argument
+          code.push_back({ OP_CALL, {} });
+        }
     }
 
     return code;

@@ -47,6 +47,13 @@ public:
     virtual std::shared_ptr<Object> __iter__() const;
     virtual std::shared_ptr<Object> __next__();
 
+    // method protocol
+    virtual std::shared_ptr<Object> getField(const std::string& name);
+    virtual void setField(const std::string& name,
+                            std::shared_ptr<Object> value);
+    virtual bool hasMethod(const std::string& name);
+    virtual std::shared_ptr<Object> getMethod(const std::string& name);
+
     virtual std::string __name__() const = 0;
     virtual ~Object() = default;
 };

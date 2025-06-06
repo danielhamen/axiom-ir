@@ -57,13 +57,9 @@ std::shared_ptr<Object> parse_literal(const std::string& tok) {
         }
 
         try {
-            if (hasExp) {
-                double v = std::stod(tok);
-                return std::make_shared<Scientific>(v);
-            }
             if (hasDot) {
                 double v = std::stod(tok);
-                return std::make_shared<Decimal>(v);
+                return std::make_shared<Float>(v);
             }
             int64_t v = std::stoll(tok);
             return std::make_shared<Integer>(v);

@@ -30,7 +30,7 @@ enum class ASTNodeType {
     STRUCT_DECL,
     IMPORT_DECL,
     FIELD_ACCESS,
-    NAMESPACE_DECL
+    NAMESPACE_DECL,
 };
 
 // --- Base AST Node ---

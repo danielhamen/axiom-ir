@@ -28,6 +28,8 @@ struct Process {
         env_stack.push_scope();      // ← global-scope frame
     };
 
+    void register_globals();
+
     /**
      * Begins the process
      */

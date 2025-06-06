@@ -429,7 +429,7 @@ std::shared_ptr<ASTNode> Parser::parse_primary() {
     }
     if (match({TOK_KEYWORD})) {
         auto kw = previous().keyword.value();
-        if (kw == Keyword::KW_TRUE || kw == Keyword::KW_FALSE || kw == Keyword::KW_NULL) {
+        if (kw == Keyword::KW_TRUE || kw == Keyword::KW_FALSE || kw == Keyword::KW_NIL || kw == Keyword::KW_NIX || kw == Keyword::KW_NAN) {
             return std::make_shared<Literal>(previous().lexeme);
         }
 

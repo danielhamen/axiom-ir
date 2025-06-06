@@ -26,7 +26,9 @@ enum Keyword {
     KW_DEFAULT,         // default branch inside match
     KW_TRUE,            // literal true
     KW_FALSE,           // literal false
-    KW_NULL,            // literal null
+    KW_NIL,             // literal nil
+    KW_NIX,             // literal nil
+    KW_NAN,             // literal nil
     KW_TRY,             // try block
     KW_CATCH,           // catch block
     KW_THROW,           // throw an error

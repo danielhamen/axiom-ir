@@ -11,8 +11,7 @@
 #include "../obj/Boolean.hpp"
 #include "../obj/String.hpp"
 #include "../obj/Integer.hpp"
-#include "../obj/Decimal.hpp"
-#include "../obj/Scientific.hpp"
+#include "../obj/Float.hpp"
 #include "../obj/RegEx.hpp"
 #include "../helpers/str_decode.hpp"
 

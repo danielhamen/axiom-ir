@@ -48,3 +48,22 @@ std::shared_ptr<Object> Object::__arccot__()  const { throw std::runtime_error("
 // Iteration
 std::shared_ptr<Object> Object::__iter__() const { throw std::runtime_error("Object is not iterable"); }
 std::shared_ptr<Object> Object::__next__()       { throw std::runtime_error("Iteration not supported"); }
+
+
+std::shared_ptr<Object> Object::getField(const std::string& name)  {
+  return nullptr;
+}
+void Object::setField(const std::string& name,
+                      std::shared_ptr<Object> value) {
+  throw std::runtime_error(
+    __name__() + " is not an instance and cannot have fields"
+  );
+}
+
+bool Object::hasMethod(const std::string& /*name*/) {
+    return false;
+}
+
+std::shared_ptr<Object> Object::getMethod(const std::string& /*name*/) {
+    return nullptr;
+}

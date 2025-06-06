@@ -1,5 +1,5 @@
 #include "Integer.hpp"
-#include "Decimal.hpp"
+#include "Float.hpp"
 #include "Boolean.hpp"
 #include "String.hpp"
 #include <memory>
@@ -22,8 +22,8 @@ std::shared_ptr<Object> Integer::__add__(const Object& o) const {
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
         return std::make_shared<Integer>(value + p->value);
     }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
-        return std::make_shared<Decimal>(static_cast<double>(value) + p->value);
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
+        return std::make_shared<Float>(static_cast<double>(value) + p->value);
     }
     if (const auto* p = dynamic_cast<const String*>(&o)) {
         return std::make_shared<String>(__str__() + p->value);
@@ -35,8 +35,8 @@ std::shared_ptr<Object> Integer::__sub__(const Object& o) const {
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
         return std::make_shared<Integer>(value - p->value);
     }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
-        return std::make_shared<Decimal>(static_cast<double>(value) - p->value);
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
+        return std::make_shared<Float>(static_cast<double>(value) - p->value);
     }
     throw std::runtime_error("TypeError: integer - " + o.__name__());
 }
@@ -45,8 +45,8 @@ std::shared_ptr<Object> Integer::__mul__(const Object& o) const {
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
         return std::make_shared<Integer>(value * p->value);
     }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
-        return std::make_shared<Decimal>(static_cast<double>(value) * p->value);
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
+        return std::make_shared<Float>(static_cast<double>(value) * p->value);
     }
     throw std::runtime_error("TypeError: integer * " + o.__name__());
 }
@@ -56,9 +56,9 @@ std::shared_ptr<Object> Integer::__div__(const Object& o) const {
         if (p->value == 0) throw std::runtime_error("ZeroDivisionError: integer / integer");
         return std::make_shared<Integer>(value / p->value);
     }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
         if (p->value == 0.0) throw std::runtime_error("ZeroDivisionError: integer / decimal");
-        return std::make_shared<Decimal>(static_cast<double>(value) / p->value);
+        return std::make_shared<Float>(static_cast<double>(value) / p->value);
     }
     throw std::runtime_error("TypeError: integer / " + o.__name__());
 }
@@ -75,7 +75,7 @@ std::shared_ptr<Object> Integer::__eq__(const Object& o) const {
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
         return std::make_shared<Boolean>(value == p->value);
     }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
         return std::make_shared<Boolean>(static_cast<double>(value) == p->value);
     }
     return std::make_shared<Boolean>(false);
@@ -85,7 +85,7 @@ std::shared_ptr<Object> Integer::__lt__(const Object& o) const {
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
         return std::make_shared<Boolean>(value < p->value);
     }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
         return std::make_shared<Boolean>(static_cast<double>(value) < p->value);
     }
     throw std::runtime_error("TypeError: integer < " + o.__name__());
@@ -95,7 +95,7 @@ std::shared_ptr<Object> Integer::__gt__(const Object& o) const {
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
         return std::make_shared<Boolean>(value > p->value);
     }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
         return std::make_shared<Boolean>(static_cast<double>(value) > p->value);
     }
     throw std::runtime_error("TypeError: integer > " + o.__name__());
@@ -105,7 +105,7 @@ std::shared_ptr<Object> Integer::__le__(const Object& o) const {
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
         return std::make_shared<Boolean>(value <= p->value);
     }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
         return std::make_shared<Boolean>(static_cast<double>(value) <= p->value);
     }
     throw std::runtime_error("TypeError: integer <= " + o.__name__());
@@ -115,7 +115,7 @@ std::shared_ptr<Object> Integer::__ge__(const Object& o) const {
     if (const auto* p = dynamic_cast<const Integer*>(&o)) {
         return std::make_shared<Boolean>(value >= p->value);
     }
-    if (const auto* p = dynamic_cast<const Decimal*>(&o)) {
+    if (const auto* p = dynamic_cast<const Float*>(&o)) {
         return std::make_shared<Boolean>(static_cast<double>(value) >= p->value);
     }
     throw std::runtime_error("TypeError: integer >= " + o.__name__());

@@ -11,7 +11,10 @@ const std::unordered_map<std::string, Opcode> opmap = {
     {"END", OP_END}, {"WRITE", OP_WRITE}, {"FLUSH", OP_FLUSH}, {"DUMP", OP_DUMP},
     {"IN", OP_IN}, {"FREAD", OP_FREAD}, {"FWRITE", OP_FWRITE}, {"EXIT", OP_EXIT},
     {"RAND", OP_RAND}, {"TIME", OP_TIME}, {"SLEEP", OP_SLEEP}, {"NOP", NOP},
-    {"TYPE", OP_TYPE}, {"CAST", OP_CAST}, {"LABEL", OP_LABEL}
+    {"TYPE", OP_TYPE}, {"CAST", OP_CAST}, {"LABEL", OP_LABEL},
+    {"LIST_NEW", OP_LIST_NEW}, {"LIST_INS", OP_LIST_INS},
+    {"LIST_GET", OP_LIST_GET}, {"LIST_SET", OP_LIST_SET}, {"LIST_LEN", OP_LIST_LEN},
+    {"ACCESS", OP_ACCESS}
 };
 
 

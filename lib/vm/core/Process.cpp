@@ -3,6 +3,9 @@
 #include "Bytecode.hpp"
 #include "../exec/exec.hpp"
 #include "../helpers/exec_step.hpp"
+#include "../obj/ClassObject.hpp"
+#include "../obj/Integer.hpp"
+#include "../obj/Float.hpp"
 
 void Process::execute() {
     // Collect all labels
@@ -31,6 +34,31 @@ void Process::execute() {
     while (!completed && !broken) {
         exec_step(*this);
     }
+}
+
+void Process::register_globals() {
+    // Integer(...)
+    global_memory.declare("Integer");
+    global_memory.set("Integer",
+      std::make_shared<ClassObject>(
+        "Integer", /*arity=*/1,
+        [](auto const& args) {
+          // mimic Python’s int(obj): use the Object’s __int__()
+          return std::make_shared<Integer>( args[0]->__int__() );
+        }
+      )
+    );
+
+    // Float(...)
+    global_memory.declare("Float");
+    global_memory.set("Float",
+      std::make_shared<ClassObject>(
+        "Float", /*arity=*/1,
+        [](auto const& args) {
+          return std::make_shared<Float>( args[0]->__double__() );
+        }
+      )
+    );
 }
 
 void Process::err(const std::string& message, const int& code) {

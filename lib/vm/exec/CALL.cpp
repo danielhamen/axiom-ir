@@ -3,6 +3,14 @@
 #include "exec.hpp"
 bool exec::CALL(Process& p) {
     const auto& b = p.module[p.pc];
+    // Peek at what’s on the stack
+    auto maybeFn = p.stack.pop();
+    if (auto fnObj = std::dynamic_pointer_cast<FunctionObject>(maybeFn)) {
+        // Let the function object handle binding new scope, args, etc.
+        fnObj->invoke(p);
+        return true;
+    }
+
     if (b.operand.size() != 1) {
         p.err("CALL expects 1 operand, got " + std::to_string(b.operand.size()));
         return false;

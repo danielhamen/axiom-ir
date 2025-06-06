@@ -1,11 +1,11 @@
 #include "Memory.hpp"
 #include "string"
-#include "../obj/Undefined.hpp"
+#include "../obj/Nix.hpp"
 
 void Memory::declare(const std::string& n) {
     if (mem.find(n) != mem.end())
         throw std::runtime_error("Already declared: " + n);
-    mem[n] = std::make_shared<Undefined>();
+    mem[n] = std::make_shared<Nix>();
 }
 void Memory::set(const std::string& n, const std::shared_ptr<Object>& v) {
     mem[n] = v;

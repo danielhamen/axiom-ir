@@ -4,7 +4,7 @@ void OperandStack::push(const std::shared_ptr<Object>& v) {
     nodes.push_back(v);
 }
 std::shared_ptr<Object> OperandStack::pop() {
-    if (nodes.empty()) throw std::runtime_error("OperandStack underflow");
+    if (nodes.empty()) throw std::runtime_error("OperandStack underflow in OperandStack::pop()");
     auto v = nodes.back();
     nodes.pop_back();
     return v;

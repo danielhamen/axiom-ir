@@ -13,7 +13,7 @@ for file in files:
     if file.endswith("cpp") or file.endswith("hpp"):
         with open(file, "r") as infile:
             contents = infile.read()
-            if "Exited with an error" in contents:
+            if "OperandStack underflow" in contents:
                 print(f"File {file} has an error")
             file_contents.append(f"""```{file}
 {contents}

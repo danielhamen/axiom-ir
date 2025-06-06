@@ -55,12 +55,16 @@ int main() {
 
     std::cout << "Parsed code." << std::endl;
 
+    for (auto node : ast) {
+        std::cout << "\t" << ast_to_string(node) << std::endl;
+    }
+
     // --- DESUGARING ---
     Desugarer desugarer(ast);
     std::vector<std::shared_ptr<ASTNode>> ast_simple = desugarer.desugar();
 
 
-    std::cout << "Desugared code:" << std::endl;
+    std::cout << std::endl << "Desugared code:" << std::endl;
 
     for (auto node : ast_simple) {
         std::cout << "\t" << ast_to_string(node) << std::endl;
